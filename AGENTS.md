@@ -6,8 +6,7 @@ Guidance for coding agents (and humans) changing this repository.
 
 A single bash script, `aws-find`, that searches every account of an AWS
 Organization through IAM Identity Center for a resource and offers a console
-deep link. `aws-find-host` is a two-line wrapper for `aws-find host`. Read
-`README.md` first; the "How it works" and "Parallel workers" sections describe
+deep link. Read `README.md` first; the "How it works" and "Parallel workers" sections describe
 the architecture you must preserve.
 
 ## Setup

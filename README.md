@@ -18,8 +18,7 @@ aws-find roles                  list the permission sets you hold in each accoun
 
 Globs are case-insensitive and support `*` and `?`. A pattern with no wildcard
 is treated as `*pattern*`. Hyphen, underscore and space are optional
-separators, so `digital-asset` also matches `DigitalAssetStack`. `aws-find-host <dns>` is kept as a shortcut for
-`aws-find host <dns>`.
+separators, so `digital-asset` also matches `DigitalAssetStack`.
 
 ## Examples
 
@@ -127,7 +126,7 @@ Dependencies: `aws` CLI v2, `jq`, `dig` (host only), `fzf` (optional, enables
 the picker), `xargs`.
 
 ```bash
-cp aws-find aws-find-host ~/bin/
+cp aws-find ~/bin/
 ```
 
 ## Flags and environment

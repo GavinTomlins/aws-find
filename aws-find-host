@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-# Compatibility wrapper: aws-find-host <dns-name> [flags]  ==  aws-find host <dns-name> [flags]
-d=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-[[ -x "$d/aws-find" ]] && exec "$d/aws-find" host "$@"
-exec aws-find host "$@"
