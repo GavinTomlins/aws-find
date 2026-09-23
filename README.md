@@ -1,42 +1,136 @@
-# aws-find — search every account in an AWS Organization
+# 🔎 aws-find
 
-**Problem.** An AWS Organization with a dozen member accounts under IAM
-Identity Center. Finding which account holds a resource (the EC2 instance
-behind `app.example.com`, a bucket named `*backup*`, a security group, a prefix
-list, a Lambda) means switching accounts in the console one by one.
-`aws-find` does the lookup across all of them from the terminal and hands back
-a one-click console deep link into the right account and role.
+Search every account in an AWS Organization for a resource, from the terminal.
 
+A single bash script that asks IAM Identity Center which accounts you can
+reach, fans out read-only lookups across all of them in parallel, and hands
+back a one-click console deep link into the right account, role and region.
+Give it a hostname, a bucket name, a security group, a prefix list or a Lambda
+name and it tells you where that thing lives.
+
+![aws-find session](assets/screenshot.svg)
+
+> 🤖 **AI agents:** see [AGENTS.md](AGENTS.md) for the setup, the offline test
+> harness, the worker contract and the rules for changing this tool.
+
+## Prerequisites
+
+- **[AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)**
+  configured for IAM Identity Center (an `[sso-session NAME]` block in
+  `~/.aws/config`). Create one with `aws configure sso-session` if you have
+  none.
+- **[jq](https://jqlang.github.io/jq/)** for JSON handling.
+- **[fzf](https://github.com/junegunn/fzf)** *(optional)* — enables the
+  interactive picker. Without it the first hit is selected automatically.
+- **dig** for `host` searches; ships with macOS and most Linux distributions
+  (`bind-utils` / `dnsutils`).
+- **bash** ≥ 4 and standard Unix tools (`xargs`, `awk`, `column`).
+
+  ```sh
+  # macOS (Homebrew)
+  brew install awscli jq fzf
+  ```
+
+## Installation
+
+```sh
+git clone https://github.com/GavinTomlins/aws-find.git
+cd aws-find
+chmod +x aws-find
 ```
-aws-find host   <dns-name>      which account/region hosts this hostname?
-aws-find s3     <glob>          S3 buckets whose name matches
-aws-find sg     <glob>          security groups by id, name, description or tag
-aws-find pl     <glob>          managed prefix lists by id, name or tag
-aws-find lambda <glob>          Lambda functions by name
-aws-find roles                  list the permission sets you hold in each account
+
+Optionally symlink it onto your `PATH`:
+
+```sh
+ln -s "$PWD/aws-find" /usr/local/bin/aws-find
+```
+
+If `~/.aws/config` holds several `sso-session` blocks, tell aws-find which one
+to use from your shell profile (`~/.zshrc` / `~/.bashrc`):
+
+```sh
+export AWS_FIND_SSO_SESSION=my-org
+```
+
+## Usage
+
+```sh
+aws-find host   <dns-name>      # which account/region hosts this hostname?
+aws-find s3     <glob>          # S3 buckets whose name matches
+aws-find sg     <glob>          # security groups by id, name, description or tag
+aws-find pl     <glob>          # managed prefix lists by id, name or tag
+aws-find lambda <glob>          # Lambda functions by name
+aws-find roles                  # the permission sets you hold in each account
+aws-find --help                 # kinds, examples and every flag
 ```
 
 Globs are case-insensitive and support `*` and `?`. A pattern with no wildcard
 is treated as `*pattern*`. Hyphen, underscore and space are optional
-separators, so `digital-asset` also matches `DigitalAssetStack`.
+separators, so `digital-asset` also matches `DigitalAssetStack`. Quote a bare
+`*` so the shell does not expand it.
 
-## Examples
-
-```bash
+```sh
 aws-find host app.example.com
-aws-find host --name payroll app.example.com             # also match tag values *payroll*
-aws-find s3 backup                                       # any bucket containing "backup"
-aws-find s3 'acme-*-logs'                                # anchored glob
-aws-find s3 digital-asset --tags                         # also match bucket tags (CDK/CFN stack name, logical id)
-aws-find sg 'sg-0a1b*'                                   # by group id prefix
-aws-find sg payroll --regions "ap-southeast-2"           # by name/description/tag, one region
-aws-find pl office                                       # prefix lists named *office*
-aws-find lambda 'billing-*' --accounts pick              # fzf-select which accounts to scan
-aws-find lambda thumbnail --json | jq .                  # machine-readable, no picker
-aws-find host app.example.com --role ReadOnlyAccess --debug
+aws-find host --name payroll app.example.com     # also match tag values *payroll*
+aws-find s3 backup                               # any bucket containing "backup"
+aws-find s3 'acme-*-logs'                        # anchored glob
+aws-find s3 digital-asset --tags                 # also match bucket tags (CDK/CFN stack name, logical id)
+aws-find sg 'sg-0a1b*'                           # by group id prefix
+aws-find sg payroll --regions "ap-southeast-2"   # by name/description/tag, one region
+aws-find sg '*'                                  # every security group in the org
+aws-find pl office                               # prefix lists named *office*
+aws-find lambda 'billing-*' --accounts pick      # fzf-select which accounts to scan
+aws-find lambda thumbnail --json | jq .          # machine-readable, no picker
+aws-find roles                                   # which role will be used where?
 ```
 
-`aws-find --help` prints the same list.
+If no SSO token is valid, aws-find runs `aws sso login` for the session and
+continues once the browser sign-in completes.
+
+### Command-line options
+
+| Option | Description |
+| ------ | ----------- |
+| `<kind> <pattern>` | Positional: one of `host`, `s3`, `sg`, `pl`, `lambda`, then a DNS name (`host`) or a glob. `roles` takes no pattern. |
+| `--regions "r1 r2"` | Regions scanned in every account. Default `ap-southeast-2 us-east-1`; `host` adds the region Amazon's IP ranges report for the address. |
+| `--accounts pick` | fzf multi-select which accounts to scan instead of all of them. |
+| `--role NAME` | Permission set to assume in every account. Warns per account when you do not hold it. |
+| `--parallel N` | Concurrent account×region workers. Default 8. |
+| `--json` | Print result rows as JSON lines to stdout and skip the picker. |
+| `--debug` | Print every captured AWS error in full and write an xtrace file (path shown at start). |
+| `--tags` | `s3` only: also match bucket tag values and show the CloudFormation stack name as the label. One extra call per bucket. |
+| `--name PAT`, `--no-name` | `host` only: tag/name pattern to search alongside the IP (default: first DNS label), or disable it. |
+| `--fast` | `host` only: one query against an org-wide Config aggregator instead of the fan-out. See *Fast path*. |
+| `-v`, `--version` | Print the aws-find version and exit. |
+| `-h`, `--help` | Print the usage header and exit. |
+
+### Environment variables
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `AWS_FIND_SSO_SESSION` | the only `sso-session` in `~/.aws/config` | Which `[sso-session NAME]` block to use. Required when the file has several. |
+| `AWS_FIND_ROLE` | most capable held | Same as `--role`. Without either, the first of `AWSAdministratorAccess`, `AdministratorAccess`, `AWSPowerUserAccess`, `PowerUserAccess`, `AWSReadOnlyAccess`, `ReadOnlyAccess`, `ViewOnlyAccess` you hold in each account is used. |
+| `AWS_FIND_REGIONS` | `ap-southeast-2 us-east-1` | Same as `--regions`. |
+| `AWS_FIND_PARALLEL` | `8` | Same as `--parallel`. |
+| `AWS_FIND_AGG_PROFILE` | *(unset)* | Profile for the `--fast` Config aggregator query. |
+| `AWS_FIND_AGG_NAME` | `aws-controltower-GuardrailsComplianceAggregator` | Aggregator name for `--fast`. |
+
+### The picker and actions
+
+Hits are printed as summary lines and a table, then offered in fzf. Choosing
+one opens an action menu:
+
+- **open console in browser** — an Identity Center deep link that lands on
+  the resource in the right account and role: the EC2 instance page, the
+  bucket's objects tab, the security group, the prefix list, or the Lambda
+  function.
+- **print console URL** — the same link on stdout, for pasting.
+- **print export lines for this account/role** — `export AWS_*` lines for the
+  short-lived credentials already minted for that account.
+- **ssm start-session to instance** — for EC2 hits, opens a Session Manager
+  shell using those credentials.
+
+Escape in either menu quits cleanly.
 
 ## How it works
 
@@ -47,15 +141,20 @@ aws-find host app.example.com --role ReadOnlyAccess --debug
  aws sso list-accounts  ──▶  per account: sso get-role-credentials
                                 └▶ per region (parallel, xargs -P): one scan function per kind
                                      host    ENI by IP, EIP, Lightsail, ELB→targets, tag-value, Route 53
-                                     s3      list-buckets (+ get-bucket-location for the region)
+                                     s3      list-buckets (+ get-bucket-location, get-bucket-tagging)
                                      sg      describe-security-groups, matched client-side
                                      pl      describe-managed-prefix-lists, matched client-side
                                      lambda  list-functions, matched client-side
         │
         ▼
  summary lines + table  ▶  fzf: pick a hit  ▶  pick an action
-                            open console │ print URL │ export creds │ ssm start-session (ec2)
 ```
+
+All calls are `Describe`/`List`. The minimum permission set is `ReadOnlyAccess`
+(or `ViewOnlyAccess` plus `sso:ListAccounts`, `sso:ListAccountRoles`,
+`sso:GetRoleCredentials`). Accounts where the role cannot make a call are
+reported by name and role after the scan rather than silently skipped, so a
+missing hit is never a mystery.
 
 ### Parallel workers
 
@@ -85,121 +184,100 @@ aws-find host app.example.com --role ReadOnlyAccess --debug
 If you see `RequestLimitExceeded` or `Throttling` in the warnings, lower
 `--parallel`. Read-only calls usually tolerate 16 or more.
 
-All calls are `Describe`/`List`. The minimum permission set is `ReadOnlyAccess`
-(or `ViewOnlyAccess` plus `sso:ListAccounts`, `sso:ListAccountRoles`,
-`sso:GetRoleCredentials`). Accounts where the role cannot make a call are
-reported by name after the scan rather than silently skipped.
+### host: what is matched
 
-### host: why match on ENI rather than describe-instances
+`host` resolves the name with `dig`, then classifies each address against
+[Amazon's published IP ranges](https://ip-ranges.amazonaws.com/ip-ranges.json)
+(cached for a day). That says up front whether the host is on AWS at all, and
+which service and region, and any region found this way is added to the scan.
 
-`describe-network-interfaces` filtered on `association.public-ip` or
-`addresses.private-ip-address` finds the interface that owns the IP whatever it
-is attached to: an EC2 instance, an ALB/NLB node, a NAT gateway, RDS, or a
-Lambda. When an instance is attached the tool follows it to the instance and
-pulls the `Name` tag, state, type, and AZ. Unattached Elastic IPs and Lightsail
-instances (which never appear as ENIs) are checked separately, and any tag
-value containing the first DNS label (`app`) is reported as a name/tag match so
-hosts behind CloudFront or a proxy still surface.
+The scan matches on `describe-network-interfaces` filtered by public or
+private IP rather than on instances, because that finds the interface whatever
+it is attached to: an EC2 instance, an ALB/NLB node, a NAT gateway, RDS, or a
+Lambda. When an instance is attached the tool follows it and pulls the `Name`
+tag, state, type and AZ. Unattached Elastic IPs and Lightsail instances, which
+never appear as interfaces, are checked separately. Any tag value containing
+the first DNS label (`app` for `app.example.com`) is reported as a name/tag
+match so hosts behind CloudFront or a proxy still surface, marked distinctly
+from IP matches. A CNAME to a load balancer is followed to its targets.
 
-### host: why Route 53 is queried too
+Route 53 is queried as well, because the account that owns the hosted zone is
+often not the account that runs the workload. Showing both answers "where is
+the box" and "where do I change the DNS".
 
-The account that owns the hosted zone is often not the account that runs the
-workload. Showing both answers "where is the box" and "where do I change the
-DNS".
-
-### host: fast path via Control Tower's Config aggregator
+### host: fast path via a Config aggregator *(experimental)*
 
 If the organization was set up with Control Tower, an org-wide Config
 aggregator named `aws-controltower-GuardrailsComplianceAggregator` exists in
 the Audit account. One query answers for every account and region:
 
-```bash
+```sh
 AWS_FIND_AGG_PROFILE=audit aws-find host --fast app.example.com
 ```
 
-Needs a profile into the Audit account with `config:SelectAggregateResourceConfig`.
-Falls through to the fan-out automatically if nothing comes back. Untested so far.
+Needs a profile into the Audit account with
+`config:SelectAggregateResourceConfig`. Falls through to the fan-out
+automatically if nothing comes back. This path has not been exercised against
+a live aggregator yet.
 
-## Install
-
-Dependencies: `aws` CLI v2, `jq`, `dig` (host only), `fzf` (optional, enables
-the picker), `xargs`.
-
-```bash
-cp aws-find ~/bin/
-```
-
-## Flags and environment
-
-| Option | Default | Meaning |
-|---|---|---|
-| `--regions "r1 r2"` / `AWS_FIND_REGIONS` | `ap-southeast-2 us-east-1` | Regions scanned per account |
-| `--accounts pick` | scan all | fzf multi-select which accounts to scan |
-| `--role NAME` / `AWS_FIND_ROLE` | most capable held | Permission set to assume. Default picks the first of AWSAdministratorAccess, AdministratorAccess, AWSPowerUserAccess, PowerUserAccess, AWSReadOnlyAccess, ReadOnlyAccess, ViewOnlyAccess you hold in each account. `aws-find roles` shows the choice per account. |
-| `--parallel N` / `AWS_FIND_PARALLEL` | `8` | Concurrent account×region workers |
-| `--json` | off | Print result rows as JSON lines to stdout, no picker |
-| `--debug` | off | Print every captured AWS error and write a full xtrace file |
-| `--tags` | off | s3 only: also match bucket tag values and show the CloudFormation stack name as the label. One extra call per bucket, so slower. |
-| `--name PAT` / `--no-name` | first DNS label | host only: tag/name pattern |
-| `--fast` + `AWS_FIND_AGG_PROFILE` | off | host only: use the Config aggregator |
-| `AWS_FIND_SSO_SESSION` | the only one in `~/.aws/config` | `sso-session` block to use; required when the file has several |
-
-The SSO token is read from `~/.aws/sso/cache`. If none is valid the tool runs
-`aws sso login --sso-session <name>` and continues. Set up a session once with
-`aws configure sso-session` if you have none.
-
-## What you see
-
-```
-» Resolving app.example.com
-»   Tag/name    : *app*
-»   A records   : 203.0.113.10
-»   203.0.113.10 is AWS EC2 in region ap-southeast-2
-» Scanning 12 account(s) x regions [ap-southeast-2 us-east-1] with 8 workers
-   ...
-! Sandbox (as S3OnlyRole) ap-southeast-2: An error occurred (UnauthorizedOperation) ...
-
-✔ app-web-01 (i-0123456789abcdef0) is in account Web Production [123456789012] region ap-southeast-2  (IP match)
-  DNS record owned by account Shared Services [210987654321] (zone:example.com.)
-
-ec2      Web Production   123456789012  ap-southeast-2  i-0123456789abcdef0  app-web-01  running t3.large 203.0.113.10  eni:association.public-ip
-route53  Shared Services  210987654321  global          -                    A -> 203.0.113.10                          zone:example.com.
-```
-
-Selecting the ec2 row and "open console in browser" opens
-
-```
-https://<your-portal>.awsapps.com/start/#/console?account_id=123456789012&role_name=<role>&destination=<ec2 InstanceDetails page>
-```
-
-Every kind has its own console destination: bucket objects tab, security group
-detail, prefix list detail, Lambda function page.
-
-## Cost and runtime
+### Cost and runtime
 
 Fan-out is 12 accounts × 2 regions × 1–6 read-only calls, so under ~150 calls
-and 10–25 seconds with 8 workers. S3 and Route 53 are global and are only
-queried once per account.
+and 10–25 seconds with 8 workers. S3 and Route 53 are global and are queried
+once per account. `--tags` adds two calls per bucket.
+
+## Security notes
+
+- **Credentials are short-lived and local.** Each account's role credentials
+  come from `sso get-role-credentials`, live only in a private temp directory
+  for the run, and are deleted on exit. Nothing is written to `~/.aws`.
+- **The export action prints secrets.** "print export lines" writes the
+  session credentials to your terminal, where they persist in scrollback and
+  session logs. Use it deliberately, and avoid it while screen-sharing.
+- **`--debug` is safe to share.** Tracing is switched off before the action
+  step, so the xtrace file records the scan but never the credentials passed
+  to `ssm start-session`. The per-account error logs it prints contain AWS
+  error messages only.
+- **Read-only by design.** Every AWS call is a `Describe`, `List` or `Get`.
+  The only actions that change anything are the ones you pick explicitly:
+  opening a console session or an SSM session.
 
 ## Tests
 
-```bash
+```sh
 tests/run
 ```
 
 Runs `aws-find` offline against `tests/fake-aws`, a stand-in for the AWS CLI
 with canned answers, in a throwaway `HOME` with a fake SSO token, stubbed
-`dig` and a picker that cancels. No AWS access is needed. Add a case to
-`tests/run` and, if it needs new data, a branch to `tests/fake-aws`.
+`dig` and a picker that cancels. No AWS access is needed. Add a `check` to
+`tests/run` for new behaviour and, if it needs new data, a branch to
+`tests/fake-aws`. `assets/make-screenshot` regenerates the screenshot from the
+same harness, so it never contains real account data.
 
 ## Extending it
 
 - **Another kind.** Add a `scan_<kind>` function that emits rows with the
   common keys (`kind acct name region id label detail via`), register it in
-  the `__scan` dispatcher and the kind list, and add a console `DEST`.
+  the `__scan` dispatcher and the kind list, add a console `DEST`, and
+  document it in the help header. AGENTS.md has the full checklist.
 - **Resource Explorer.** If an org-level Resource Explorer view exists,
-  `aws resource-explorer-2 search --query-string "k2"` gives tag/name hits
+  `aws resource-explorer-2 search --query-string "app"` gives tag/name hits
   across accounts in one call. It cannot search by IP.
 - **Richer TUI.** The worker output is JSON lines, so a Python `textual` front
   end can stream rows into a live table via `subprocess` without touching the
   scan logic.
+
+## Changelog and versioning
+
+Notable changes are tracked in [CHANGELOG.md](CHANGELOG.md). Releases follow
+[Semantic Versioning](https://semver.org) and are tagged `v<version>`; check
+your installed version with:
+
+```sh
+aws-find --version
+```
+
+## License
+
+[MIT](LICENSE)

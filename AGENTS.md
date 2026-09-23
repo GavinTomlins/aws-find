@@ -15,7 +15,8 @@ the architecture you must preserve.
   `fzf`. `shellcheck` for linting.
 - Live use needs an `[sso-session NAME]` block in `~/.aws/config`. With
   several blocks, set `AWS_FIND_SSO_SESSION=NAME`.
-- Tests need no AWS access: `tests/run`.
+- Tests need no AWS access: `tests/run`. The README screenshot comes from
+  the same harness via `assets/make-screenshot`.
 
 ## Before you claim a change works
 
@@ -50,6 +51,15 @@ the architecture you must preserve.
 - **Help text is the spec.** The header comment of `aws-find` is what
   `--help` prints (lines 2–45). Keep the examples there and in the README in
   sync.
+
+## Releasing
+
+1. Bump `VERSION` at the top of `aws-find`.
+2. Move the `[Unreleased]` entries in `CHANGELOG.md` under a new
+   `[x.y.z] - YYYY-MM-DD` heading and update the compare links.
+3. Regenerate the screenshot if the output changed: `assets/make-screenshot`
+   (offline, uses the fake CLI; never run it against a real organization).
+4. Commit, then `git tag v<x.y.z>`.
 
 ## Commit messages
 
