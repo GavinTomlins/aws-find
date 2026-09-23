@@ -71,12 +71,12 @@ separators, so `digital-asset` also matches `DigitalAssetStack`. Quote a bare
 
 ```sh
 aws-find host app.example.com
-aws-find host --name payroll app.example.com     # also match tag values *payroll*
+aws-find host --name website app.example.com     # also match tag values *website*
 aws-find s3 backup                               # any bucket containing "backup"
 aws-find s3 'acme-*-logs'                        # anchored glob
 aws-find s3 digital-asset --tags                 # also match bucket tags (CDK/CFN stack name, logical id)
 aws-find sg 'sg-0a1b*'                           # by group id prefix
-aws-find sg payroll --regions "ap-southeast-2"   # by name/description/tag, one region
+aws-find sg website --regions "ap-southeast-2"   # by name/description/tag, one region
 aws-find sg '*'                                  # every security group in the org
 aws-find pl office                               # prefix lists named *office*
 aws-find lambda 'billing-*' --accounts pick      # fzf-select which accounts to scan

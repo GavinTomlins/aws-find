@@ -16,7 +16,7 @@ case "$args" in
       *"association.public-ip"*) [[ $AWS_DEFAULT_REGION == ap-southeast-2 && $AWS_ACCESS_KEY_ID == K1 ]] && echo '[{"id":"eni-1","label":"","type":"interface","iid":"i-0123456789abcdef0","pub":"203.0.113.10","priv":"10.0.0.5","vpc":"vpc-1"}]' || echo '[]' ;;
       *"describe-instances --instance-ids"*) echo '[{"id":"i-0123456789abcdef0","state":"running","itype":"t3.large","label":"app-web-01","pub":"203.0.113.10","priv":"10.0.0.5","az":"ap-southeast-2a"}]' ;;
       *"tag-value"*) [[ $AWS_ACCESS_KEY_ID == K2 && $AWS_DEFAULT_REGION == ap-southeast-2 ]] && echo '[{"id":"i-0fedcba987654321f","state":"stopped","itype":"t3.small","label":"App-staging","pub":null,"priv":"10.1.0.9","az":"ap-southeast-2b","tags":[{"Key":"Name","Value":"App-staging"}]}]' || echo '[]' ;;
-      *"describe-security-groups"*) [[ $AWS_DEFAULT_REGION == ap-southeast-2 ]] && echo '[{"id":"sg-0a1b2c","label":"payroll-web","desc":"Payroll web tier","vpc":"vpc-1","tags":[{"Key":"Name","Value":"payroll-web"}]},{"id":"sg-zzz","label":"default","desc":"default VPC security group","vpc":"vpc-1","tags":null}]' || echo '[]' ;;
+      *"describe-security-groups"*) [[ $AWS_DEFAULT_REGION == ap-southeast-2 ]] && echo '[{"id":"sg-0a1b2c","label":"website-web","desc":"Website web tier","vpc":"vpc-1","tags":[{"Key":"Name","Value":"website-web"}]},{"id":"sg-zzz","label":"default","desc":"default VPC security group","vpc":"vpc-1","tags":null}]' || echo '[]' ;;
       *"describe-managed-prefix-lists"*) [[ $AWS_ACCESS_KEY_ID == K2 && $AWS_DEFAULT_REGION == ap-southeast-2 ]] && echo '[{"id":"pl-123","label":"office-ips","owner":"210987654321","ver":3,"max":20,"fam":"IPv4","tags":[]}]' || echo '[]' ;;
       *) echo '[]' ;;
     esac ;;
