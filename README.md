@@ -110,6 +110,7 @@ aws-find sg     <glob>          # security groups by id, name, description or ta
 aws-find pl     <glob>          # managed prefix lists by id, name or tag
 aws-find lambda <glob>          # Lambda functions by name
 aws-find roles                  # the permission sets you hold in each account
+aws-find groups                 # the accounts each group in AWS_FIND_GROUPS selects
 aws-find --help                 # kinds, examples and every flag
 ```
 
@@ -136,6 +137,8 @@ aws-find sg website --regions all                # every enabled region in every
 aws-find sg '*'                                  # every security group in the org
 aws-find pl office                               # prefix lists named *office*
 aws-find lambda 'billing-*' --accounts pick      # fzf-select which accounts to scan
+aws-find ec2 '*' --running --accounts web        # only the accounts in group "web"
+aws-find sg website --accounts 'products*'       # ad-hoc account-name glob, or an account id
 aws-find lambda thumbnail --json | jq .          # machine-readable, no picker
 aws-find sg website --show-commands              # learn the CLI: every aws command used, grouped and explained
 aws-find roles                                   # which role will be used where?
@@ -150,7 +153,7 @@ continues once the browser sign-in completes.
 | ------ | ----------- |
 | `<kind> <pattern>` | Positional: one of `host`, `dns`, `ec2`, `s3`, `sg`, `pl`, `lambda`, then a DNS name (`host`, `dns`; a URL is accepted and reduced to its hostname) or a glob. `roles` takes no pattern. |
 | `--regions "r1 r2"` | Regions scanned in every account. `all` or `'*'` (quoted) scans every region each account has enabled, asked per account so opt-in regions are covered. `--regions=all` also works. Default: see `AWS_FIND_REGIONS`. `host` adds the region Amazon's IP ranges report for the address. |
-| `--accounts pick` | fzf multi-select which accounts to scan instead of all of them. |
+| `--accounts SEL` | Which accounts to scan. `all` (default), `pick` (fzf multi-select), a group name from `AWS_FIND_GROUPS`, an account-name glob, a 12-digit account id, or a comma list of those. Case-insensitive. See *Account groups*. |
 | `--role NAME` | Permission set to assume in every account. Warns per account when you do not hold it. |
 | `--parallel N` | Concurrent account×region workers. Default 8. |
 | `--json` | Print result rows as JSON lines to stdout and skip the picker. Each row carries `url`, the Identity Center console deep link, and `role`, the permission set it uses. |
@@ -168,11 +171,45 @@ continues once the browser sign-in completes.
 | Variable | Default | Description |
 | -------- | ------- | ----------- |
 | `AWS_FIND_SSO_SESSION` | the only `sso-session` in `~/.aws/config` | Which `[sso-session NAME]` block to use. Required when the file has several. |
+| `AWS_FIND_GROUPS` | *(unset)* | Named account groups: `name=glob[,glob];name=glob;...` over account names. See *Account groups*. |
+| `AWS_FIND_ACCOUNTS` | `all` | Default `--accounts` selector. |
 | `AWS_FIND_ROLE` | most capable held | Same as `--role`. Without either, the first of `AWSAdministratorAccess`, `AdministratorAccess`, `AWSPowerUserAccess`, `PowerUserAccess`, `AWSReadOnlyAccess`, `ReadOnlyAccess`, `ViewOnlyAccess` you hold in each account is used. |
 | `AWS_FIND_REGIONS` | *(unset)* | Same as `--regions`, including `all`. When unset, the standard `AWS_REGION` or `AWS_DEFAULT_REGION` is used if present, else `ap-southeast-2 us-east-1`. Precedence: `--regions` flag > `AWS_FIND_REGIONS` > `AWS_REGION` / `AWS_DEFAULT_REGION` > built-in. |
 | `AWS_FIND_PARALLEL` | `8` | Same as `--parallel`. |
 | `AWS_FIND_AGG_PROFILE` | *(unset)* | Profile for the `--fast` Config aggregator query. |
 | `AWS_FIND_AGG_NAME` | `aws-controltower-GuardrailsComplianceAggregator` | Aggregator name for `--fast`. |
+
+### Account groups
+
+Most organizations name accounts by product or tier, so a glob over the
+account name usually selects the right set: `--accounts 'products*'`,
+`--accounts '*web*'`, `--accounts '*operations*'`. Groups give those globs a
+short, stable name, and let one name cover several patterns. Define them once
+in your shell profile:
+
+```sh
+export AWS_FIND_GROUPS='products=Products *;web=*Web*;ops=*Operations*,*Platform*;sandbox=Sandbox'
+```
+
+Then `--accounts web`, or `AWS_FIND_ACCOUNTS=web` to make it the default. A
+selector may mix group names, globs and ids: `--accounts ops,sandbox` or
+`--accounts web,123456789012`. Check what a group selects before relying on
+it:
+
+```sh
+aws-find groups
+```
+
+```
+products  =  Products *
+    Products Development                   345678901234
+    Products Production                    456789012345
+web  =  *Web*
+    Web Production                         123456789012
+```
+
+A selector that matches no account stops the run with an error rather than
+silently scanning nothing.
 
 ### The picker and actions
 

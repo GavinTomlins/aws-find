@@ -29,6 +29,7 @@ chmod +x "$H/bin/dig"
 mkdir -p "$H/.cache/aws-find"; : >"$H/.cache/aws-find/ip-ranges.json"
 
 pass=0; fail=0
+export AWS_FIND_GROUPS='web=Web *;shared=Shared Services;both=web*,shared*;empty=nothing-here'
 run() { HOME=$H TMPDIR=$H PATH="$H/bin:$PATH" AWS_FIND_REGIONS="${AWS_FIND_REGIONS-ap-southeast-2 us-east-1}" AWS_FIND_PARALLEL=4 \
         timeout 60 "$root/aws-find" "$@" </dev/null 2>&1; echo "exit=$?"; }
 check() {  # check <name> <expected-substring> <command...>
@@ -69,6 +70,15 @@ out=$(run ec2 '*' --running); if grep -q 'App-staging' <<<"$out"; then fail=$((f
 check "ec2: --state stopped"                        "App-staging" ec2 '*' --state stopped
 check "ec2: --state is server-side filter"          "Name=instance-state-name,Values=running" ec2 '*' --running --show-commands
 check "ec2: --state warned for other kinds"         "--state only affects 'ec2'" sg website --running
+check "accounts: group selects"                    "Accounts (web): Web Production" sg website --accounts web
+out=$(run sg website --accounts web); if grep -q 'Shared Services' <<<"$out"; then fail=$((fail+1)); echo "  FAIL accounts: group leaked other account"; else pass=$((pass+1)); echo "  ok   accounts: group excludes others"; fi
+check "accounts: ad-hoc glob"                       "Accounts (shared*): Shared Services" sg website --accounts 'shared*'
+check "accounts: account id"                        "Accounts (210987654321): Shared Services" sg website --accounts=210987654321
+check "accounts: comma list and multi-pattern group" "Accounts (both): Shared Services, Web Production" sg website --accounts both
+AWS_FIND_ACCOUNTS=web check "accounts: env default"   "Accounts (web): Web Production" sg website
+check "accounts: no match dies"                     "matched no account" sg website --accounts empty
+check "groups: lists members"                       "Web Production                         123456789012" groups
+check "groups: empty group flagged"                 "(matches no account)" groups
 check "s3: name glob"                               "s3 acme-prod-logs in account Web Production" s3 'acme-*'
 check "s3: region resolved per bucket"              "region ap-southeast-2" s3 acme-prod-logs
 check "s3: --tags finds CamelCase stack via separators" "DigitalAssetStack" s3 digital-asset --tags

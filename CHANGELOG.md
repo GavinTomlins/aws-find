@@ -6,6 +6,15 @@ All notable changes to aws-find are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `--accounts SEL` now accepts a group name from `AWS_FIND_GROUPS`
+  (`name=glob[,glob];...` over account names), an account-name glob, a
+  12-digit account id, or a comma list of those, alongside `all` and `pick`.
+  `AWS_FIND_ACCOUNTS` sets the default selector. A selector matching no
+  account is an error.
+- `aws-find groups` shows the accounts each configured group selects.
+
 ## [0.5.0] - 2026-09-24
 
 ### Added
