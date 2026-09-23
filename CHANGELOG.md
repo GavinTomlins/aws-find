@@ -6,6 +6,20 @@ All notable changes to aws-find are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `--regions all` (or `'*'`, `--regions=all`, `AWS_FIND_REGIONS=all`) scans
+  every region each account has enabled, discovered per account so opt-in
+  regions are covered. Global services still run once per account.
+
+### Changed
+
+- Region default now honours the standard `AWS_REGION` / `AWS_DEFAULT_REGION`
+  when `AWS_FIND_REGIONS` is unset. Precedence: `--regions` flag,
+  `AWS_FIND_REGIONS`, `AWS_REGION` / `AWS_DEFAULT_REGION`, built-in default.
+- `--region` is accepted as an alias of `--regions`, and `--regions=VALUE` form
+  is supported.
+
 ## [0.4.0] - 2026-09-24
 
 ### Added

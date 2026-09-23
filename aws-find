@@ -28,6 +28,7 @@
 #                                                              #   stack name or logical id (slower)
 #   aws-find sg 'sg-0a1b*'                                     # by group id prefix
 #   aws-find sg website --regions "ap-southeast-2"             # by name/description/tag, one region
+#   aws-find sg website --regions all                          # every enabled region in every account
 #   aws-find pl office                                         # prefix lists named *office*
 #   aws-find lambda 'billing-*' --accounts pick                # fzf-select which accounts to scan
 #   aws-find lambda thumbnail --json | jq .                    # machine-readable, no picker
@@ -38,7 +39,9 @@
 #
 # Common flags
 #   -v, --version       print the aws-find version and exit
-#   --regions "r1 r2"   regions to scan            (default: $AWS_FIND_REGIONS or ap-southeast-2 us-east-1)
+#   --regions "r1 r2"   regions to scan; "all" or "*" = every region each account has enabled
+#                       (default: $AWS_FIND_REGIONS, else $AWS_REGION / $AWS_DEFAULT_REGION,
+#                       else ap-southeast-2 us-east-1)
 #   --accounts pick     fzf multi-select accounts  (default: all visible)
 #   --role NAME         permission set to assume   (default: $AWS_FIND_ROLE, else the first of
 #                       (AWS)AdministratorAccess, (AWS)PowerUserAccess, (AWS)ReadOnlyAccess,
@@ -68,7 +71,9 @@ trap 'rc=$?; printf "\033[1;31mx\033[0m internal error (exit %s) at line %s: %s\
 
 SSO_SESSION="${AWS_FIND_SSO_SESSION:-}"
 ROLE_PREF="${AWS_FIND_ROLE:-}"
-REGIONS="${AWS_FIND_REGIONS:-ap-southeast-2 us-east-1}"
+# Regions to scan: --regions flag > AWS_FIND_REGIONS > AWS_REGION / AWS_DEFAULT_REGION > built-in.
+# "all" or "*" means every region each account has enabled (asked per account).
+REGIONS="${AWS_FIND_REGIONS:-${AWS_REGION:-${AWS_DEFAULT_REGION:-ap-southeast-2 us-east-1}}}"
 PARALLEL="${AWS_FIND_PARALLEL:-8}"
 AGG_PROFILE="${AWS_FIND_AGG_PROFILE:-}"
 AGG_NAME="${AWS_FIND_AGG_NAME:-aws-controltower-GuardrailsComplianceAggregator}"
@@ -128,6 +133,7 @@ explain_cmd() {
     *"describe-network-interfaces"*)           echo "the network interface that owns the IP, whatever it is attached to (EC2, ELB node, NAT, RDS, Lambda)" ;;
     *"describe-instances --instance-ids"*)     echo "details of the instance attached to a matched interface or load balancer target" ;;
     *"describe-instances --filters"*)          echo "instances where any tag value matches the pattern" ;;
+    *"ec2 describe-regions"*)                  echo "regions this account has enabled, used when scanning --regions all" ;;
     *"ec2 describe-instances --query"*)        echo "all instances in the region; matched client-side on Name tag, id, IPs and tags" ;;
     *"describe-addresses"*)                    echo "Elastic IPs matching the address (an unattached one still shows up here)" ;;
     *"lightsail get-instances"*)               echo "Lightsail instances, which never appear as EC2 network interfaces" ;;
@@ -441,7 +447,8 @@ while [[ $# -gt 0 ]]; do
     --fast) MODE="fast"; shift ;;
     --json) JSON=1; shift ;;
     --show-commands) SHOW_CMDS=1; shift ;;
-    --regions) REGIONS="$2"; shift 2 ;;
+    --regions|--region) REGIONS="$2"; shift 2 ;;
+    --regions=*|--region=*) REGIONS="${1#*=}"; shift ;;
     --accounts) ACCOUNT_MODE="$2"; shift 2 ;;
     --role) ROLE_PREF="$2"; shift 2 ;;
     --parallel) PARALLEL="$2"; shift 2 ;;
@@ -459,12 +466,13 @@ case "$KIND" in host|dns|ec2|s3|sg|pl|lambda|roles) ;; "") usage 1 ;; *) die "un
 [[ -n "$PATTERN" || "$KIND" == "roles" ]] || die "aws-find ${KIND} needs a $([[ $KIND == host || $KIND == dns ]] && echo dns-name || echo pattern) (try --help)"
 
 need aws; need jq
+case "$REGIONS" in all|'*'|ALL) REGIONS="all" ;; esac
 HAVE_FZF=0; command -v fzf >/dev/null && HAVE_FZF=1
 [[ $DEBUG -eq 1 ]] && log "Debug trace: ${TRACE}"
 
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 RESULTS="$TMP/results.jsonl"; : >"$RESULTS"
-export AWS_FIND_KIND="$KIND" AWS_FIND_TMP="$TMP" AWS_FIND_FIRST_REGION="${REGIONS%% *}"
+export AWS_FIND_KIND="$KIND" AWS_FIND_TMP="$TMP"
 export AWS_FIND_SHOW_CMDS="$SHOW_CMDS" AWS_FIND_CMDLOG="$TMP/cmds-main.log"
 
 # ---------------------------------------------------------------------------
@@ -507,7 +515,7 @@ PYX
         log "  ${ip} is AWS ${ipsvc:-?} in region ${ipreg}"
         for r in $ipreg; do
           [[ "$r" == GLOBAL ]] && continue
-          [[ " $REGIONS " == *" $r "* ]] || { REGIONS="$REGIONS $r"; warn "  region ${r} was not in the scan list; adding it"; }
+          [[ "$REGIONS" == "all" || " $REGIONS " == *" $r "* ]] || { REGIONS="$REGIONS $r"; warn "  region ${r} was not in the scan list; adding it"; }
         done
       fi
     done
@@ -605,7 +613,7 @@ if [[ "$MODE" == "fanout" ]]; then
     fzf --multi --header="TAB to select accounts to scan (ENTER = selection, none = all)" --with-nth=2.. --delimiter=$'\t' <"$TMP/accounts.tsv" >"$TMP/picked.tsv" || true
     [[ -s "$TMP/picked.tsv" ]] && mv "$TMP/picked.tsv" "$TMP/accounts.tsv"
   fi
-  [[ "$KIND" == "roles" ]] || log "Scanning $(wc -l <"$TMP/accounts.tsv" | tr -d ' ') account(s) x regions [${REGIONS}] with ${PARALLEL} workers"
+  [[ "$KIND" == "roles" ]] || log "Scanning $(wc -l <"$TMP/accounts.tsv" | tr -d ' ') account(s) x regions [$([[ "$REGIONS" == all ]] && echo "all enabled, per account" || echo "$REGIONS")] with ${PARALLEL} workers"
 
   : >"$TMP/jobs.tsv"; : >"$TMP/roles.tsv"
   while IFS=$'\t' read -r acct name; do
@@ -627,14 +635,26 @@ if [[ "$MODE" == "fanout" ]]; then
     aws sso get-role-credentials --region "$SSO_REGION" --access-token "$TOKEN" --account-id "$acct" --role-name "$role" --output json >"$TMP/cred-$acct.json" 2>/dev/null \
       || { warn "  ${name} (${acct}): could not assume ${role}, skipping"; continue; }
     printf '%s\t%s\t%s\n' "$acct" "$role" "$name" >>"$TMP/roles.tsv"
-    for r in $REGIONS; do printf '%s\t%s\t%s\n' "$acct" "$name" "$r" >>"$TMP/jobs.tsv"; done
+    acct_regions="$REGIONS"
+    if [[ "$REGIONS" == "all" ]]; then
+      # enabled regions differ per account (opt-in regions), so ask each one
+      acct_regions=$(AWS_ACCESS_KEY_ID=$(jq -r .roleCredentials.accessKeyId "$TMP/cred-$acct.json") \
+                     AWS_SECRET_ACCESS_KEY=$(jq -r .roleCredentials.secretAccessKey "$TMP/cred-$acct.json") \
+                     AWS_SESSION_TOKEN=$(jq -r .roleCredentials.sessionToken "$TMP/cred-$acct.json") \
+                     aws ec2 describe-regions --region us-east-1 --query 'Regions[].RegionName' --output text 2>/dev/null | tr '\t' ' ' | xargs || true)
+      [[ -n "$acct_regions" ]] || { warn "  ${name} (${acct}): could not list enabled regions; using ap-southeast-2 us-east-1"; acct_regions="ap-southeast-2 us-east-1"; }
+    fi
+    first=1
+    for r in $acct_regions; do printf '%s\t%s\t%s\t%s\n' "$acct" "$name" "$r" "$first" >>"$TMP/jobs.tsv"; first=0; done
   done <"$TMP/accounts.tsv"; CMD_CTX=""
   [[ "$KIND" == "roles" ]] && { print_commands; exit 0; }
 
   # NUL-delimited so account names with spaces survive xargs.
   # shellcheck disable=SC2016
   tr '\n' '\0' <"$TMP/jobs.tsv" | xargs -0 -P "$PARALLEL" -n1 bash -c '
-    IFS=$'"'"'\t'"'"' read -r acct name region <<<"$1"; c="$AWS_FIND_TMP/cred-$acct.json"
+    IFS=$'"'"'\t'"'"' read -r acct name region first <<<"$1"; c="$AWS_FIND_TMP/cred-$acct.json"
+    # global services (S3, Route 53) run only in the first region of each account
+    [[ "$first" == 1 ]] && export AWS_FIND_FIRST_REGION="$region" || export AWS_FIND_FIRST_REGION="-"
     export AWS_ACCESS_KEY_ID=$(jq -r .roleCredentials.accessKeyId "$c")
     export AWS_SECRET_ACCESS_KEY=$(jq -r .roleCredentials.secretAccessKey "$c")
     export AWS_SESSION_TOKEN=$(jq -r .roleCredentials.sessionToken "$c")

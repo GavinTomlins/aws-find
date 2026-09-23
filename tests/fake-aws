@@ -9,6 +9,7 @@ case "$args" in
   *"list-account-roles"*) echo '["AWSReadOnlyAccess"]' ;;
   *"get-role-credentials"*"123456789012"*) echo '{"roleCredentials":{"accessKeyId":"K1","secretAccessKey":"s","sessionToken":"t"}}' ;;
   *"get-role-credentials"*) echo '{"roleCredentials":{"accessKeyId":"K2","secretAccessKey":"s","sessionToken":"t"}}' ;;
+  *"ec2 describe-regions"*) [[ $AWS_ACCESS_KEY_ID == K1 ]] && printf 'ap-southeast-2\tus-east-1\teu-west-1\n' || printf 'ap-southeast-2\tus-east-1\n' ;;
   *"Values=203.0.113.10,"*) echo "TRAILING COMMA BUG: $args" >&2; exit 252 ;;
   *"describe-network-interfaces"*|*"describe-instances"*|*"describe-security-groups"*|*"describe-managed-prefix-lists"*|*"describe-addresses"*)
     if [[ "${FAKE_DENY_EC2:-0}" == 1 ]]; then echo "An error occurred (UnauthorizedOperation) when calling the ${args%% *} operation" >&2; exit 254; fi

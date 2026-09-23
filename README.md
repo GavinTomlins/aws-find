@@ -130,6 +130,7 @@ aws-find s3 'acme-*-logs'                        # anchored glob
 aws-find s3 digital-asset --tags                 # also match bucket tags (CDK/CFN stack name, logical id)
 aws-find sg 'sg-0a1b*'                           # by group id prefix
 aws-find sg website --regions "ap-southeast-2"   # by name/description/tag, one region
+aws-find sg website --regions all                # every enabled region in every account
 aws-find sg '*'                                  # every security group in the org
 aws-find pl office                               # prefix lists named *office*
 aws-find lambda 'billing-*' --accounts pick      # fzf-select which accounts to scan
@@ -146,7 +147,7 @@ continues once the browser sign-in completes.
 | Option | Description |
 | ------ | ----------- |
 | `<kind> <pattern>` | Positional: one of `host`, `dns`, `ec2`, `s3`, `sg`, `pl`, `lambda`, then a DNS name (`host`, `dns`; a URL is accepted and reduced to its hostname) or a glob. `roles` takes no pattern. |
-| `--regions "r1 r2"` | Regions scanned in every account. Default `ap-southeast-2 us-east-1`; `host` adds the region Amazon's IP ranges report for the address. |
+| `--regions "r1 r2"` | Regions scanned in every account. `all` or `'*'` (quoted) scans every region each account has enabled, asked per account so opt-in regions are covered. `--regions=all` also works. Default: see `AWS_FIND_REGIONS`. `host` adds the region Amazon's IP ranges report for the address. |
 | `--accounts pick` | fzf multi-select which accounts to scan instead of all of them. |
 | `--role NAME` | Permission set to assume in every account. Warns per account when you do not hold it. |
 | `--parallel N` | Concurrent account×region workers. Default 8. |
@@ -165,7 +166,7 @@ continues once the browser sign-in completes.
 | -------- | ------- | ----------- |
 | `AWS_FIND_SSO_SESSION` | the only `sso-session` in `~/.aws/config` | Which `[sso-session NAME]` block to use. Required when the file has several. |
 | `AWS_FIND_ROLE` | most capable held | Same as `--role`. Without either, the first of `AWSAdministratorAccess`, `AdministratorAccess`, `AWSPowerUserAccess`, `PowerUserAccess`, `AWSReadOnlyAccess`, `ReadOnlyAccess`, `ViewOnlyAccess` you hold in each account is used. |
-| `AWS_FIND_REGIONS` | `ap-southeast-2 us-east-1` | Same as `--regions`. |
+| `AWS_FIND_REGIONS` | *(unset)* | Same as `--regions`, including `all`. When unset, the standard `AWS_REGION` or `AWS_DEFAULT_REGION` is used if present, else `ap-southeast-2 us-east-1`. Precedence: `--regions` flag > `AWS_FIND_REGIONS` > `AWS_REGION` / `AWS_DEFAULT_REGION` > built-in. |
 | `AWS_FIND_PARALLEL` | `8` | Same as `--parallel`. |
 | `AWS_FIND_AGG_PROFILE` | *(unset)* | Profile for the `--fast` Config aggregator query. |
 | `AWS_FIND_AGG_NAME` | `aws-controltower-GuardrailsComplianceAggregator` | Aggregator name for `--fast`. |
