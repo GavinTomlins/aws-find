@@ -12,7 +12,19 @@ cp "$here/fake-aws" "$H/bin/aws"; chmod +x "$H/bin/aws"
 # fzf stub: cancels the picker (exit 130) so runs never block on a terminal
 printf '#!/usr/bin/env bash\ncat >/dev/null; exit 130\n' >"$H/bin/fzf"; chmod +x "$H/bin/fzf"
 # dig stub: fixed answer so tests are hermetic
-printf '#!/usr/bin/env bash\necho 203.0.113.10\n' >"$H/bin/dig"; chmod +x "$H/bin/dig"
+cat >"$H/bin/dig" <<'DIG'
+#!/usr/bin/env bash
+# args: +short [TYPE] name. NS answers define the public zone apexes.
+case " $* " in
+  *" NS example.com "*)        printf 'ns-2.awsdns-02.co.uk.\nns-1.awsdns-01.org.\n' ;;
+  *" NS example.app "*)        printf 'ns-5.awsdns-05.com.\nns-6.awsdns-06.net.\n' ;;
+  *" NS cus-1.example.app "*)  printf 'ns-9.awsdns-09.net.\nns-10.awsdns-10.org.\n' ;;
+  *" NS elsewhere.example "*)  printf 'dana.ns.cloudflare.com.\n' ;;
+  *" NS "*)                    ;;
+  *)                           echo 203.0.113.10 ;;
+esac
+DIG
+chmod +x "$H/bin/dig"
 # keep the ip-ranges lookup offline: an empty cache file is treated as "unknown"
 mkdir -p "$H/.cache/aws-find"; : >"$H/.cache/aws-find/ip-ranges.json"
 
@@ -29,6 +41,16 @@ check "host: IP match found in the right account"   "app-web-01 (i-0123456789abc
 check "host: tag match reported separately"         "name/tag match only" host app.example.com
 check "host: picker cancel exits 0"                 "exit=0" host app.example.com
 check "host: --no-name suppresses tag search"       "exit=0" host app.example.com --no-name
+check "dns: live zone marked authoritative"        "zone example.com in account Web Production [123456789012] — AUTHORITATIVE" dns app.example.com
+check "dns: exact record shown"                     "app.example.com → A 203.0.113.10" dns app.example.com
+check "dns: private zone flagged"                   "example.com (private) in account Shared Services" dns app.example.com
+check "dns: scheme and path stripped"               "Public DNS view of portal.cus-1.example.app" dns 'https://portal.cus-1.example.app/login'
+check "dns: delegated child is the apex"            "zone apex   : cus-1.example.app" dns https://portal.cus-1.example.app/login
+check "dns: child zone authoritative"               "zone cus-1.example.app in account Shared Services [210987654321] — AUTHORITATIVE" dns portal.cus-1.example.app
+check "dns: wildcard record found"                  "*.cus-1.example.app → CNAME lb.cus-1.example.app" dns portal.cus-1.example.app
+check "dns: parent shows delegation"                "parent zone: delegates cus-1.example.app to ns-10.awsdns-10.org ns-9.awsdns-09.net" dns portal.cus-1.example.app
+check "dns: non-Route53 provider warned"            "provider    : Cloudflare" dns x.elsewhere.example
+check "dns: host kind also strips scheme"           "Resolving app.example.com" host https://app.example.com/
 check "s3: name glob"                               "s3 acme-prod-logs in account Web Production" s3 'acme-*'
 check "s3: region resolved per bucket"              "region ap-southeast-2" s3 acme-prod-logs
 check "s3: --tags finds CamelCase stack via separators" "DigitalAssetStack" s3 digital-asset --tags

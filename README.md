@@ -66,6 +66,7 @@ export AWS_FIND_SSO_SESSION=my-org
 
 ```sh
 aws-find host   <dns-name>      # which account/region hosts this hostname?
+aws-find dns    <dns-name>      # which account holds the Route 53 zone and record, and is it live?
 aws-find s3     <glob>          # S3 buckets whose name matches
 aws-find sg     <glob>          # security groups by id, name, description or tag
 aws-find pl     <glob>          # managed prefix lists by id, name or tag
@@ -82,6 +83,8 @@ separators, so `digital-asset` also matches `DigitalAssetStack`. Quote a bare
 ```sh
 aws-find host app.example.com
 aws-find host --name website app.example.com     # also match tag values *website*
+aws-find dns app.example.com                     # zone, record, and whether Route 53 is authoritative
+aws-find dns https://portal.cus-1.example.app/   # scheme and path stripped; finds delegated child zones
 aws-find s3 backup                               # any bucket containing "backup"
 aws-find s3 'acme-*-logs'                        # anchored glob
 aws-find s3 digital-asset --tags                 # also match bucket tags (CDK/CFN stack name, logical id)
@@ -102,7 +105,7 @@ continues once the browser sign-in completes.
 
 | Option | Description |
 | ------ | ----------- |
-| `<kind> <pattern>` | Positional: one of `host`, `s3`, `sg`, `pl`, `lambda`, then a DNS name (`host`) or a glob. `roles` takes no pattern. |
+| `<kind> <pattern>` | Positional: one of `host`, `dns`, `s3`, `sg`, `pl`, `lambda`, then a DNS name (`host`, `dns`; a URL is accepted and reduced to its hostname) or a glob. `roles` takes no pattern. |
 | `--regions "r1 r2"` | Regions scanned in every account. Default `ap-southeast-2 us-east-1`; `host` adds the region Amazon's IP ranges report for the address. |
 | `--accounts pick` | fzf multi-select which accounts to scan instead of all of them. |
 | `--role NAME` | Permission set to assume in every account. Warns per account when you do not hold it. |
@@ -175,6 +178,7 @@ for example `aws --profile web-prod ec2 describe-network-interfaces ...`.
  aws sso list-accounts  ──▶  per account: sso get-role-credentials
                                 └▶ per region (parallel, xargs -P): one scan function per kind
                                      host    ENI by IP, EIP, Lightsail, ELB→targets, tag-value, Route 53
+                                     dns     list-hosted-zones, get-hosted-zone (NS), record sets
                                      s3      list-buckets (+ get-bucket-location, get-bucket-tagging)
                                      sg      describe-security-groups, matched client-side
                                      pl      describe-managed-prefix-lists, matched client-side
@@ -239,6 +243,48 @@ from IP matches. A CNAME to a load balancer is followed to its targets.
 Route 53 is queried as well, because the account that owns the hosted zone is
 often not the account that runs the workload. Showing both answers "where is
 the box" and "where do I change the DNS".
+
+### dns: which zone is live, and where
+
+`dns` answers three questions about a name: which account holds a hosted zone
+that could serve it, which record in that zone answers it, and whether that
+zone is the one the internet actually uses.
+
+It first builds the public picture without any AWS access: it resolves the
+name, then walks up its suffixes with `dig NS` until it finds nameservers.
+That longest suffix is the **public zone apex**, and its NS records say who is
+authoritative. A delegated child zone, such as `cus-1.example.app` under
+`example.app`, appears here as its own apex, and a provider other than
+Route 53 (Cloudflare, a registrar's DNS) is called out immediately, because in
+that case no hosted zone can be live.
+
+Then, in every account, each hosted zone that is a suffix of the name is
+classified:
+
+| Zone | Verdict |
+| ---- | ------- |
+| Public zone equal to the apex, whose delegation set matches the public NS | **AUTHORITATIVE** |
+| Public zone equal to the apex, but the public NS point elsewhere | **NOT LIVE**: a stale or not-yet-delegated copy |
+| Public parent of the apex | shows whether it holds the NS record that **delegates** the child |
+| Public zone deeper than the apex | **NOT DELEGATED**: unreachable from the internet |
+| Private zone | VPC-only, never authoritative publicly |
+
+For each zone the record that answers the name is shown too: the exact name
+first, then wildcards walking up (`*.cus-1.example.app`), including alias
+targets. Selecting a row opens that zone's record list in the console.
+
+```
+» Public DNS view of portal.cus-1.example.app
+»   resolves to : 203.0.113.10
+»   zone apex   : cus-1.example.app
+»   public NS   : ns-10.awsdns-10.org ns-9.awsdns-09.net
+»   provider    : Route 53 (a matching hosted zone below will be marked AUTHORITATIVE)
+
+✔ zone cus-1.example.app in account Shared Services [210987654321] — AUTHORITATIVE: public NS match this zone
+    *.cus-1.example.app → CNAME lb.cus-1.example.app
+✔ zone example.app in account Shared Services [210987654321] — parent zone: delegates cus-1.example.app to ns-10.awsdns-10.org ns-9.awsdns-09.net
+    no record answers portal.cus-1.example.app in this zone
+```
 
 ### host: fast path via a Config aggregator *(experimental)*
 

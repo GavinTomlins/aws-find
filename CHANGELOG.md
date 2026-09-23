@@ -6,6 +6,16 @@ All notable changes to aws-find are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `aws-find dns <dns-name>`: finds every hosted zone across the organization
+  that could serve a name, shows the record (exact or wildcard, including
+  aliases) that answers it, and says whether each zone is authoritative by
+  comparing its delegation set with the public NS records. Delegated child
+  zones, parent zones that delegate them, private zones and non-Route 53
+  providers are each called out.
+- `host` and `dns` accept a URL and reduce it to its hostname.
+
 ## [0.2.0] - 2026-09-24
 
 ### Added

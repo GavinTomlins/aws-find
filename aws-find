@@ -7,6 +7,7 @@
 #   aws-find sg     <glob>          security groups by id, name, description or tag
 #   aws-find pl     <glob>          managed prefix lists by id, name or tag
 #   aws-find lambda <glob>          Lambda functions by name
+#   aws-find dns    <dns-name>      which account holds the Route 53 zone and record, and is it live?
 #   aws-find roles                  list the permission sets you hold in each account
 #
 # Globs are case-insensitive and support * and ?. A pattern without a
@@ -16,6 +17,8 @@
 # Examples
 #   aws-find host app.example.com
 #   aws-find host --name website app.example.com               # also match tag values *website*
+#   aws-find dns app.example.com                               # zone, record, and whether Route 53 is authoritative
+#   aws-find dns https://portal.cus-1.example.app/login        # scheme and path are stripped; finds delegated child zones
 #   aws-find s3 backup                                         # any bucket containing "backup"
 #   aws-find s3 'acme-*-logs'                                  # anchored glob
 #   aws-find s3 digital-asset --tags                           # also match bucket tags, e.g. the CDK/CFN
@@ -105,7 +108,9 @@ explain_cmd() {
     *"describe-target-health"*)                echo "instances registered in the target group" ;;
     *"elb describe-load-balancers"*)           echo "classic load balancers matching the CNAME" ;;
     *"route53 list-hosted-zones"*)             echo "hosted zones in the account, to find one that is a suffix of the name" ;;
-    *"route53 list-resource-record-sets"*)     echo "the record for the name inside that zone" ;;
+    *"route53 get-hosted-zone"*)               echo "the zone's delegation set (its nameservers), to compare with the public NS records" ;;
+    *"--start-record-type NS"*)                echo "an NS record at the child name: does this parent zone delegate it?" ;;
+    *"route53 list-resource-record-sets"*)     echo "the record for the name inside that zone (exact name, then wildcards)" ;;
     *"s3api list-buckets"*)                    echo "every bucket in the account (S3 is global, so this runs once per account)" ;;
     *"s3api get-bucket-location"*)             echo "which region a matched bucket lives in" ;;
     *"s3api get-bucket-tagging"*)              echo "bucket tags; CloudFormation/CDK put the stack name and logical id here" ;;
@@ -147,6 +152,11 @@ print_commands() {
 }
 usage() { sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 urlencode() { jq -rn --arg s "$1" '$s|@uri'; }
+
+# "https://Host.Example.com/path." -> "host.example.com"
+normalize_name() { local n="$1"; n="${n#*://}"; n="${n%%/*}"; n="${n%%:*}"; n="${n%.}"; printf '%s' "$n" | tr 'A-Z' 'a-z'; }
+# any element in common between two space-separated lists?
+overlap() { local a b; for a in $1; do for b in $2; do [[ "$a" == "$b" ]] && return 0; done; done; return 1; }
 
 # glob (case-insensitive, * ?) -> anchored regex for jq test($re;"i")
 glob_to_re() {
@@ -271,6 +281,49 @@ scan_host() {
   fi
 }
 
+scan_dns() {   # Route 53 is global: once per account
+  [[ "$W_REGION" == "$AWS_FIND_FIRST_REGION" ]] || return 0
+  local host="$AWS_FIND_HOST" apex="${AWS_FIND_APEX:-}" pubns="${AWS_FIND_PUBLIC_NS:-}"
+  aws route53 list-hosted-zones --query 'HostedZones[].{zid:Id,zone:Name,private:Config.PrivateZone,records:ResourceRecordSetCount}' --output json \
+  | jq -c --arg h "${host}." '.[] | select(.zone as $z | $h | endswith($z))' \
+  | while read -r z; do
+      local zid zone private status rec zns del q rr p candidates
+      zid=$(jq -r .zid <<<"$z"); zone=$(jq -r .zone <<<"$z"); zone="${zone%.}"; private=$(jq -r .private <<<"$z")
+      # --- is this zone what the internet actually uses for the name?
+      if [[ "$private" == "true" ]]; then
+        status="private zone: VPC-only, never authoritative on the internet"
+      else
+        zns=$(aws route53 get-hosted-zone --id "$zid" --query 'DelegationSet.NameServers' --output json | jq -r '.[] | ascii_downcase' | sort | xargs)
+        if [[ -z "$apex" ]]; then
+          status="public NS for the name could not be resolved; zone NS ${zns}"
+        elif [[ "$zone" == "$apex" ]]; then
+          if overlap "$zns" "$pubns"; then status="AUTHORITATIVE: public NS match this zone"
+          else status="NOT LIVE: public NS (${pubns}) are not this zone's (${zns})"; fi
+        elif [[ "$apex" == *".$zone" ]]; then
+          del=$(aws route53 list-resource-record-sets --hosted-zone-id "$zid" --start-record-name "$apex" --start-record-type NS --max-items 1 \
+                  --query "ResourceRecordSets[?Name=='${apex}.' && Type=='NS'].ResourceRecords[].Value" --output json | jq -r '.[] | ascii_downcase' | sed 's/\.$//' | sort | xargs)
+          if [[ -n "$del" ]]; then status="parent zone: delegates ${apex} to ${del}"
+          else status="parent zone: no NS delegation for ${apex} here, so the public ${apex} is served elsewhere"; fi
+        else
+          status="NOT DELEGATED: deeper than the public apex ${apex}, unreachable from the internet"
+        fi
+      fi
+      # --- which record in this zone answers the name: exact, then wildcards walking up
+      candidates="$host"; p="${host#*.}"
+      while [[ "$p" == "$zone" || "$p" == *".$zone" ]]; do candidates+=" *.$p"; [[ "$p" == "$zone" ]] && break; p="${p#*.}"; done
+      rec=""
+      for q in $candidates; do
+        rr=$(aws route53 list-resource-record-sets --hosted-zone-id "$zid" --start-record-name "$q" --max-items 5 \
+               --query 'ResourceRecordSets[].{n:Name,t:Type,v:ResourceRecords[].Value,a:AliasTarget.DNSName}' --output json \
+             | jq -r --arg q "${q}." '.[] | select((.n | gsub("\\\\052";"*")) == $q) | .t + " " + (if .a then "ALIAS " + .a else ((.v // [])|join(",")) end)' | tr '\n' ';')
+        [[ -n "$rr" ]] && { rec="${q} → ${rr%;}"; break; }
+      done
+      [[ -n "$rec" ]] || rec="no record answers ${host} in this zone"
+      emit --arg zid "$zid" --arg zone "$zone" --arg private "$private" --arg status "$status" --arg rec "$rec" \
+        '{kind:"dns",acct:$acct,name:$name,region:"global",via:("zone:"+$zone),id:$zid,label:($zone + (if $private=="true" then " (private)" else "" end)),detail:($status + " · " + $rec),status:$status,record:$rec}'
+    done
+}
+
 scan_s3() {   # buckets are account-global: list once, then find each bucket's region
   [[ "$W_REGION" == "$AWS_FIND_FIRST_REGION" ]] || return 0
   local re="$AWS_FIND_RE" want_tags="${AWS_FIND_S3_TAGS:-0}"
@@ -337,7 +390,7 @@ if [[ "${1:-}" == "__scan" ]]; then
   W_ACCT="$2"; W_NAME="$3"; W_REGION="$4"
   export AWS_DEFAULT_REGION="$W_REGION" AWS_PAGER=""
   case "$AWS_FIND_KIND" in
-    host) scan_host ;; s3) scan_s3 ;; sg) scan_sg ;; pl) scan_pl ;; lambda) scan_lambda ;;
+    host) scan_host ;; dns) scan_dns ;; s3) scan_s3 ;; sg) scan_sg ;; pl) scan_pl ;; lambda) scan_lambda ;;
   esac
   exit 0
 fi
@@ -364,8 +417,8 @@ while [[ $# -gt 0 ]]; do
     *) if [[ -z "$KIND" ]]; then KIND="$1"; elif [[ -z "$PATTERN" ]]; then PATTERN="$1"; else die "unexpected argument $1"; fi; shift ;;
   esac
 done
-case "$KIND" in host|s3|sg|pl|lambda|roles) ;; "") usage 1 ;; *) die "unknown kind '$KIND' (host|s3|sg|pl|lambda|roles)" ;; esac
-[[ -n "$PATTERN" || "$KIND" == "roles" ]] || die "aws-find ${KIND} needs a $([[ $KIND == host ]] && echo dns-name || echo pattern) (try --help)"
+case "$KIND" in host|dns|s3|sg|pl|lambda|roles) ;; "") usage 1 ;; *) die "unknown kind '$KIND' (host|dns|s3|sg|pl|lambda|roles)" ;; esac
+[[ -n "$PATTERN" || "$KIND" == "roles" ]] || die "aws-find ${KIND} needs a $([[ $KIND == host || $KIND == dns ]] && echo dns-name || echo pattern) (try --help)"
 
 need aws; need jq
 HAVE_FZF=0; command -v fzf >/dev/null && HAVE_FZF=1
@@ -381,7 +434,7 @@ export AWS_FIND_SHOW_CMDS="$SHOW_CMDS" AWS_FIND_CMDLOG="$TMP/cmds-main.log"
 # ---------------------------------------------------------------------------
 if [[ "$KIND" == "host" ]]; then
   need dig
-  HOST="$PATTERN"
+  HOST=$(normalize_name "$PATTERN")
   log "Resolving ${HOST}"
   DIG_OUT=$(dig +short "$HOST" 2>/dev/null || true)
   CNAMES=$(grep -E '\.$' <<<"$DIG_OUT" | sed 's/\.$//' | xargs || true)
@@ -422,6 +475,32 @@ PYX
     done
   fi
   export AWS_FIND_HOST="$HOST" AWS_FIND_NAME="$NAME_PAT" AWS_FIND_IPS="$IPS" AWS_FIND_CNAMES="$CNAMES"
+elif [[ "$KIND" == "dns" ]]; then
+  need dig
+  HOST=$(normalize_name "$PATTERN")
+  log "Public DNS view of ${HOST}"
+  ANS=$(dig +short "$HOST" 2>/dev/null | sed 's/\.$//' | xargs || true)
+  [[ -n "$ANS" ]] && log "  resolves to : ${ANS}" || warn "  does not resolve publicly"
+  # The public zone apex is the longest suffix that has NS records; a delegated
+  # child zone (cus-1.example.app) shows up here as its own apex.
+  APEX=""; PUBNS=""; n="$HOST"
+  while [[ "$n" == *.* ]]; do
+    ns=$(dig +short NS "$n" 2>/dev/null | sed 's/\.$//' | tr 'A-Z' 'a-z' | sort | xargs || true)
+    [[ -n "$ns" ]] && { APEX="$n"; PUBNS="$ns"; break; }
+    n="${n#*.}"
+  done
+  if [[ -z "$APEX" ]]; then
+    warn "  no NS records found for any suffix of ${HOST}; cannot tell which zone is live"
+  else
+    log "  zone apex   : ${APEX}"
+    log "  public NS   : ${PUBNS}"
+    case "$PUBNS" in
+      *awsdns*)          log "  provider    : Route 53 (a matching hosted zone below will be marked AUTHORITATIVE)" ;;
+      *cloudflare*)      warn "  provider    : Cloudflare, not Route 53; any hosted zone found below is not live" ;;
+      *)                 warn "  provider    : not Route 53 (${PUBNS%% *} ...); any hosted zone found below is not live" ;;
+    esac
+  fi
+  export AWS_FIND_HOST="$HOST" AWS_FIND_APEX="$APEX" AWS_FIND_PUBLIC_NS="$PUBNS"
 elif [[ "$KIND" == "roles" ]]; then
   :
 else
@@ -556,6 +635,7 @@ jq -r 'select(.kind=="ec2" and (.via|startswith("tag:")|not)) | "\u001b[1;32m✔
 jq -r 'select(.kind=="ec2" and (.via|startswith("tag:"))) | "\u001b[1;36m~ \(.label // .id) (\(.id)) in account \(.name) [\(.acct)] region \(.region)  (name/tag match only: \(.via))\u001b[0m"' "$RESULTS" | sort -u >&2
 jq -r 'select(.kind=="lightsail") | "\u001b[1;32m✔ Lightsail \(.label) is in account \(.name) [\(.acct)] region \(.region)\u001b[0m"' "$RESULTS" | sort -u >&2
 jq -r 'select(.kind=="eip") | "\u001b[1;33m! \(.pub) is an unattached Elastic IP in account \(.name) [\(.acct)] region \(.region)\u001b[0m"' "$RESULTS" | sort -u >&2
+jq -r 'select(.kind=="dns") | (if (.status|startswith("AUTHORITATIVE")) then "\u001b[1;32m✔" elif (.status|startswith("parent zone: delegates")) then "\u001b[1;32m✔" else "\u001b[1;33m!" end) + " zone \(.label) in account \(.name) [\(.acct)] — \(.status)\u001b[0m\n    \(.record)"' "$RESULTS" >&2
 jq -r 'select(.kind=="route53") | "  DNS record owned by account \(.name) [\(.acct)] (\(.via))"' "$RESULTS" | sort -u >&2
 jq -r 'select(.kind=="s3" or .kind=="sg" or .kind=="pl" or .kind=="lambda") | "\u001b[1;32m✔ \(.kind) \(.label) in account \(.name) [\(.acct)] region \(.region)\u001b[0m"' "$RESULTS" | sort -u >&2
 echo >&2
@@ -579,6 +659,7 @@ case "$RKIND" in
   eip)       DEST="https://${CREG}.console.aws.amazon.com/ec2/home?region=${CREG}#Addresses:" ;;
   elb)       DEST="https://${CREG}.console.aws.amazon.com/ec2/home?region=${CREG}#LoadBalancers:" ;;
   lightsail) DEST="https://lightsail.aws.amazon.com/ls/webapp/${CREG}/instances/${ID}/connect" ;;
+  dns)       DEST="https://us-east-1.console.aws.amazon.com/route53/v2/hostedzones#ListRecordSets/${ID##*/}" ;;
   route53)   DEST="https://us-east-1.console.aws.amazon.com/route53/v2/hostedzones#ListRecordSets/${ID##*/}" ;;
   s3)        DEST="https://s3.console.aws.amazon.com/s3/buckets/${ID}?region=${CREG}&tab=objects" ;;
   sg)        DEST="https://${CREG}.console.aws.amazon.com/ec2/home?region=${CREG}#SecurityGroup:groupId=${ID}" ;;

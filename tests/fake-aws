@@ -27,6 +27,20 @@ case "$args" in
   *"get-bucket-tagging"*"assets-acme-cloud"*) echo '[{"Key":"aws:cloudformation:stack-name","Value":"DigitalAssetStack"},{"Key":"aws:cloudformation:logical-id","Value":"DigitalAssetBucketA1B2"}]' ;;
   *"get-bucket-tagging"*) echo "An error occurred (NoSuchTagSet)" >&2; exit 254 ;;
   *"lambda list-functions"*) [[ $AWS_DEFAULT_REGION == us-east-1 ]] && echo '[{"id":"billing-thumbnailer","label":"billing-thumbnailer","runtime":"python3.12","mem":512,"mod":"2026-08-01T10:00:00.000+0000","arn":"arn:x"}]' || echo '[]' ;;
-  *"lightsail"*|*"list-hosted-zones"*) echo '[]' ;;
+  # --- Route 53. Web Production (K1): public example.com (live). Shared Services (K2):
+  #     public example.app which delegates cus-1.example.app, the delegated child zone
+  #     cus-1.example.app (live, wildcard CNAME), and a private copy of example.com.
+  *"list-hosted-zones"*) [[ $AWS_ACCESS_KEY_ID == K1 ]] \
+      && echo '[{"zid":"/hostedzone/Z1WEB","zone":"example.com.","private":false,"records":12}]' \
+      || echo '[{"zid":"/hostedzone/Z2APP","zone":"example.app.","private":false,"records":4},{"zid":"/hostedzone/Z3CUS","zone":"cus-1.example.app.","private":false,"records":3},{"zid":"/hostedzone/Z4PRIV","zone":"example.com.","private":true,"records":2}]' ;;
+  *"get-hosted-zone --id /hostedzone/Z1WEB"*) echo '["ns-1.awsdns-01.org","ns-2.awsdns-02.co.uk"]' ;;
+  *"get-hosted-zone --id /hostedzone/Z2APP"*) echo '["ns-5.awsdns-05.com","ns-6.awsdns-06.net"]' ;;
+  *"get-hosted-zone --id /hostedzone/Z3CUS"*) echo '["ns-9.awsdns-09.net","ns-10.awsdns-10.org"]' ;;
+  *"list-resource-record-sets --hosted-zone-id /hostedzone/Z2APP --start-record-name cus-1.example.app --start-record-type NS"*) echo '["ns-9.awsdns-09.net.","ns-10.awsdns-10.org."]' ;;
+  *"list-resource-record-sets --hosted-zone-id /hostedzone/Z1WEB --start-record-name app.example.com "*) echo '[{"n":"app.example.com.","t":"A","v":["203.0.113.10"],"a":null},{"n":"www.example.com.","t":"CNAME","v":["app.example.com"],"a":null}]' ;;
+  *"list-resource-record-sets --hosted-zone-id /hostedzone/Z3CUS --start-record-name portal.cus-1.example.app "*) echo '[{"n":"\\052.cus-1.example.app.","t":"CNAME","v":["lb.cus-1.example.app"],"a":null}]' ;;
+  *"list-resource-record-sets --hosted-zone-id /hostedzone/Z3CUS --start-record-name *.cus-1.example.app "*) echo '[{"n":"\\052.cus-1.example.app.","t":"CNAME","v":["lb.cus-1.example.app"],"a":null}]' ;;
+  *"list-resource-record-sets"*) echo '[]' ;;
+  *"lightsail"*) echo '[]' ;;
   *) echo "An error occurred (AccessDeniedException): $args" >&2; exit 254 ;;
 esac
