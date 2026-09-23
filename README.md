@@ -31,6 +31,16 @@ name and it tells you where that thing lives.
   brew install awscli jq fzf
   ```
 
+  ```sh
+  # Debian / Ubuntu
+  sudo apt install jq fzf dnsutils bsdextrautils curl unzip   # dnsutils = dig, bsdextrautils = column
+
+  # AWS CLI v2 from Amazon's installer (the apt "awscli" package is v1 on older releases)
+  curl -sS "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o /tmp/awscliv2.zip
+  unzip -q /tmp/awscliv2.zip -d /tmp && sudo /tmp/aws/install
+  aws --version   # should report aws-cli/2.x
+  ```
+
 ## Installation
 
 ```sh
