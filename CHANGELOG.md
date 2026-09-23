@@ -12,6 +12,10 @@ All notable changes to aws-find are recorded here. The format follows
   every region each account has enabled, discovered per account so opt-in
   regions are covered. Global services still run once per account.
 
+- `--state STATE[,..]` for `ec2`, with `--running` and `--stopped` shorthands,
+  applied server-side. A `television/aws-find-ec2-running.toml` channel lists
+  every running instance in the organization.
+
 ### Changed
 
 - Region default now honours the standard `AWS_REGION` / `AWS_DEFAULT_REGION`

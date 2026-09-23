@@ -64,6 +64,11 @@ AWS_FIND_REGIONS=all check "regions: env all"       "regions [all enabled, per a
 AWS_FIND_REGIONS='' AWS_DEFAULT_REGION=us-east-1 check "regions: AWS_DEFAULT_REGION honoured" "regions [us-east-1]" lambda billing
 AWS_FIND_REGIONS='' AWS_REGION=us-east-1 check "regions: AWS_REGION honoured" "lambda billing-thumbnailer" lambda billing
 check "regions: global kinds still once per account" "s3 acme-prod-logs in account Web Production" s3 acme --regions all
+check "ec2: --running keeps running only"          "app-web-01" ec2 '*' --running
+out=$(run ec2 '*' --running); if grep -q 'App-staging' <<<"$out"; then fail=$((fail+1)); echo "  FAIL ec2: --running leaked a stopped instance"; else pass=$((pass+1)); echo "  ok   ec2: --running excludes stopped"; fi
+check "ec2: --state stopped"                        "App-staging" ec2 '*' --state stopped
+check "ec2: --state is server-side filter"          "Name=instance-state-name,Values=running" ec2 '*' --running --show-commands
+check "ec2: --state warned for other kinds"         "--state only affects 'ec2'" sg website --running
 check "s3: name glob"                               "s3 acme-prod-logs in account Web Production" s3 'acme-*'
 check "s3: region resolved per bucket"              "region ap-southeast-2" s3 acme-prod-logs
 check "s3: --tags finds CamelCase stack via separators" "DigitalAssetStack" s3 digital-asset --tags

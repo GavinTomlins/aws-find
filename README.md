@@ -125,6 +125,8 @@ aws-find dns app.example.com                     # zone, record, and whether Rou
 aws-find dns https://portal.cus-1.example.app/   # scheme and path stripped; finds delegated child zones
 aws-find ec2 'web-*'                             # instances by Name tag across the org
 aws-find ec2 10.1.0.9                            # or by private/public IP, instance id, any tag value
+aws-find ec2 '*' --running                       # every running instance in the org
+aws-find ec2 '*' --state stopped --regions all   # by state, everywhere
 aws-find s3 backup                               # any bucket containing "backup"
 aws-find s3 'acme-*-logs'                        # anchored glob
 aws-find s3 digital-asset --tags                 # also match bucket tags (CDK/CFN stack name, logical id)
@@ -154,6 +156,7 @@ continues once the browser sign-in completes.
 | `--json` | Print result rows as JSON lines to stdout and skip the picker. Each row carries `url`, the Identity Center console deep link, and `role`, the permission set it uses. |
 | `--show-commands` | After the scan, print every `aws` CLI command that ran, with the SSO token redacted, identical commands across accounts grouped with a count and region list, and a one-line explanation of what each one is for. Goes to stderr, so it combines with `--json`. See *Learning the CLI*. |
 | `--debug` | Print every captured AWS error in full and write an xtrace file (path shown at start). |
+| `--state STATE[,..]`, `--running`, `--stopped` | `ec2` only: keep instances in these states (`pending`, `running`, `stopping`, `stopped`, `shutting-down`, `terminated`). Applied server-side as an EC2 filter. |
 | `--tags` | `s3` only: also match bucket tag values and show the CloudFormation stack name as the label. One extra call per bucket. |
 | `--name PAT`, `--no-name` | `host` only: tag/name pattern to search alongside the IP (default: first DNS label), or disable it. |
 | `--fast` | `host` only: one query against an org-wide Config aggregator instead of the fan-out. See *Fast path*. |
@@ -222,7 +225,7 @@ it in the console.
 
 ```sh
 cp television/aws-find-*.toml ~/.config/television/cable/
-tv aws-find-ec2        # also: aws-find-s3, aws-find-sg, aws-find-pl, aws-find-lambda
+tv aws-find-ec2        # also: aws-find-ec2-running, aws-find-s3, aws-find-sg, aws-find-pl, aws-find-lambda
 ```
 
 Each channel runs `aws-find <kind> '*' --json`, caches the rows in
