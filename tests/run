@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Offline test suite: runs aws-find against tests/fake-aws in a throwaway
+# HOME with a canned SSO token, and asserts on the output. No AWS access
+# needed. Usage: tests/run
+set -uo pipefail
+here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd); root=$(dirname "$here")
+H=$(mktemp -d); trap 'rm -rf "$H"' EXIT
+mkdir -p "$H/.aws/sso/cache" "$H/bin"
+printf '[sso-session acme]\nsso_start_url = https://acme.awsapps.com/start\nsso_region = ap-southeast-2\n' >"$H/.aws/config"
+printf '{"startUrl":"https://acme.awsapps.com/start","accessToken":"tok","expiresAt":"2099-01-01T00:00:00Z"}' >"$H/.aws/sso/cache/a.json"
+cp "$here/fake-aws" "$H/bin/aws"; chmod +x "$H/bin/aws"
+# fzf stub: cancels the picker (exit 130) so runs never block on a terminal
+printf '#!/usr/bin/env bash\ncat >/dev/null; exit 130\n' >"$H/bin/fzf"; chmod +x "$H/bin/fzf"
+# dig stub: fixed answer so tests are hermetic
+printf '#!/usr/bin/env bash\necho 203.0.113.10\n' >"$H/bin/dig"; chmod +x "$H/bin/dig"
+# keep the ip-ranges lookup offline: an empty cache file is treated as "unknown"
+mkdir -p "$H/.cache/aws-find"; : >"$H/.cache/aws-find/ip-ranges.json"
+
+pass=0; fail=0
+run() { HOME=$H TMPDIR=$H PATH="$H/bin:$PATH" AWS_FIND_REGIONS="ap-southeast-2 us-east-1" AWS_FIND_PARALLEL=4 \
+        timeout 60 "$root/aws-find" "$@" </dev/null 2>&1; echo "exit=$?"; }
+check() {  # check <name> <expected-substring> <command...>
+  local name="$1" want="$2"; shift 2
+  local out; out=$(run "$@")
+  if grep -qF -- "$want" <<<"$out"; then pass=$((pass+1)); printf '  ok   %s\n' "$name"
+  else fail=$((fail+1)); printf '  FAIL %s\n       wanted: %s\n' "$name" "$want"; sed 's/^/       | /' <<<"$out"; fi
+}
+check "host: IP match found in the right account"   "app-web-01 (i-0123456789abcdef0) is in account Web Production [123456789012]" host app.example.com
+check "host: tag match reported separately"         "name/tag match only" host app.example.com
+check "host: picker cancel exits 0"                 "exit=0" host app.example.com
+check "host: --no-name suppresses tag search"       "exit=0" host app.example.com --no-name
+check "s3: name glob"                               "s3 acme-prod-logs in account Web Production" s3 'acme-*'
+check "s3: region resolved per bucket"              "region ap-southeast-2" s3 acme-prod-logs
+check "s3: --tags finds CamelCase stack via separators" "DigitalAssetStack" s3 digital-asset --tags
+check "s3: no match exits 2"                        "exit=2" s3 nothing-here
+check "sg: matched by description"                  "sg payroll-web" sg 'payroll web'
+check "sg: bare * lists everything (default group)" "default" sg '*'
+check "pl: match by name"                           "pl office-ips in account Shared Services" pl office
+check "lambda: anchored glob"                       "lambda billing-thumbnailer" lambda 'billing-*'
+check "json: rows on stdout"                        '"kind":"lambda"' lambda billing --json
+check "roles: most capable role chosen"             "AWSPowerUserAccess" roles
+check "roles: chosen role is marked"                "(will be used)" roles
+check "bad kind refused"                            "unknown kind" bogus x
+FAKE_DENY_EC2=1 check "denied account is reported with its role" "(as AWSPowerUserAccess) ap-southeast-2: An error occurred (UnauthorizedOperation)" host app.example.com
+FAKE_DENY_EC2=1 check "denied scan still finishes"  "scan(s) reported errors" sg payroll
+
+printf '\n%d passed, %d failed\n' "$pass" "$fail"; [[ $fail -eq 0 ]]

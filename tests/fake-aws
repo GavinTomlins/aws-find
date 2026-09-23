@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Stand-in for the AWS CLI used by tests/run. Answers a fixed set of
+# subcommands with canned JSON; anything else is AccessDenied.
+# Scenario switches (env): FAKE_DENY_EC2=1 makes EC2 calls fail.
+args="$*"
+case "$args" in
+  *"sso list-accounts"*) echo '{"accountList":[{"accountId":"123456789012","accountName":"Web Production"},{"accountId":"210987654321","accountName":"Shared Services"}]}' ;;
+  *"list-account-roles"*"123456789012"*) echo '["S3OnlyRole","AWSPowerUserAccess"]' ;;
+  *"list-account-roles"*) echo '["AWSReadOnlyAccess"]' ;;
+  *"get-role-credentials"*"123456789012"*) echo '{"roleCredentials":{"accessKeyId":"K1","secretAccessKey":"s","sessionToken":"t"}}' ;;
+  *"get-role-credentials"*) echo '{"roleCredentials":{"accessKeyId":"K2","secretAccessKey":"s","sessionToken":"t"}}' ;;
+  *"Values=203.0.113.10,"*) echo "TRAILING COMMA BUG: $args" >&2; exit 252 ;;
+  *"describe-network-interfaces"*|*"describe-instances"*|*"describe-security-groups"*|*"describe-managed-prefix-lists"*|*"describe-addresses"*)
+    if [[ "${FAKE_DENY_EC2:-0}" == 1 ]]; then echo "An error occurred (UnauthorizedOperation) when calling the ${args%% *} operation" >&2; exit 254; fi
+    case "$args" in
+      *"association.public-ip"*) [[ $AWS_DEFAULT_REGION == ap-southeast-2 && $AWS_ACCESS_KEY_ID == K1 ]] && echo '[{"id":"eni-1","label":"","type":"interface","iid":"i-0123456789abcdef0","pub":"203.0.113.10","priv":"10.0.0.5","vpc":"vpc-1"}]' || echo '[]' ;;
+      *"describe-instances --instance-ids"*) echo '[{"id":"i-0123456789abcdef0","state":"running","itype":"t3.large","label":"app-web-01","pub":"203.0.113.10","priv":"10.0.0.5","az":"ap-southeast-2a"}]' ;;
+      *"tag-value"*) [[ $AWS_ACCESS_KEY_ID == K2 && $AWS_DEFAULT_REGION == ap-southeast-2 ]] && echo '[{"id":"i-0fedcba987654321f","state":"stopped","itype":"t3.small","label":"App-staging","pub":null,"priv":"10.1.0.9","az":"ap-southeast-2b","tags":[{"Key":"Name","Value":"App-staging"}]}]' || echo '[]' ;;
+      *"describe-security-groups"*) [[ $AWS_DEFAULT_REGION == ap-southeast-2 ]] && echo '[{"id":"sg-0a1b2c","label":"payroll-web","desc":"Payroll web tier","vpc":"vpc-1","tags":[{"Key":"Name","Value":"payroll-web"}]},{"id":"sg-zzz","label":"default","desc":"default VPC security group","vpc":"vpc-1","tags":null}]' || echo '[]' ;;
+      *"describe-managed-prefix-lists"*) [[ $AWS_ACCESS_KEY_ID == K2 && $AWS_DEFAULT_REGION == ap-southeast-2 ]] && echo '[{"id":"pl-123","label":"office-ips","owner":"210987654321","ver":3,"max":20,"fam":"IPv4","tags":[]}]' || echo '[]' ;;
+      *) echo '[]' ;;
+    esac ;;
+  *"s3api list-buckets"*) [[ $AWS_ACCESS_KEY_ID == K1 ]] && echo '[{"id":"assets-acme-cloud-fc9eebc9","created":"2026-05-22T00:00:00Z"},{"id":"acme-prod-logs","created":"2026-03-04T00:00:00Z"},{"id":"misc","created":"2019-01-01T00:00:00Z"}]' || echo '[]' ;;
+  *"get-bucket-location"*"acme-prod-logs"*) echo "ap-southeast-2" ;;
+  *"get-bucket-location"*) echo "None" ;;
+  *"get-bucket-tagging"*"assets-acme-cloud"*"stack-name"*) echo "DigitalAssetStack" ;;
+  *"get-bucket-tagging"*"assets-acme-cloud"*) echo '[{"Key":"aws:cloudformation:stack-name","Value":"DigitalAssetStack"},{"Key":"aws:cloudformation:logical-id","Value":"DigitalAssetBucketA1B2"}]' ;;
+  *"get-bucket-tagging"*) echo "An error occurred (NoSuchTagSet)" >&2; exit 254 ;;
+  *"lambda list-functions"*) [[ $AWS_DEFAULT_REGION == us-east-1 ]] && echo '[{"id":"billing-thumbnailer","label":"billing-thumbnailer","runtime":"python3.12","mem":512,"mod":"2026-08-01T10:00:00.000+0000","arn":"arn:x"}]' || echo '[]' ;;
+  *"lightsail"*|*"list-hosted-zones"*) echo '[]' ;;
+  *) echo "An error occurred (AccessDeniedException): $args" >&2; exit 254 ;;
+esac
