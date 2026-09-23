@@ -149,7 +149,7 @@ one-line note on what it is for and why aws-find uses it:
   aws sso list-accounts --region ap-southeast-2 --access-token <redacted> --output json
 
   # the network interface that owns the IP, whatever it is attached to (EC2, ELB node, NAT, RDS, Lambda)
-  # ran in 12 account(s), region(s): ap-southeast-2 us-east-1
+  # ran in 10 account(s), region(s): ap-southeast-2 us-east-1
   aws ec2 describe-network-interfaces --filters Name=association.public-ip,Values=203.0.113.10 --query 'NetworkInterfaces[].{...}' --output json
 ```
 
@@ -187,7 +187,8 @@ missing hit is never a mystery.
    one (see `--role`), and mints short-lived credentials with
    `sso get-role-credentials`. Credentials go to one file per account in a
    private temp directory, and one job line per account×region goes to a jobs
-   file. 12 accounts × 2 regions = 24 jobs.
+   file. The job count is accounts × regions: 10 accounts and 2 regions make
+   20 jobs.
 2. **Fan-out.** The jobs file is streamed to `xargs -0 -P N -n1`. `-P N`
    (default 8, `--parallel`) is the number of jobs running at once; as one
    finishes the next starts, so all slots stay busy. Lines are NUL-delimited
@@ -246,9 +247,10 @@ a live aggregator yet.
 
 ### Cost and runtime
 
-Fan-out is 12 accounts × 2 regions × 1–6 read-only calls, so under ~150 calls
-and 10–25 seconds with 8 workers. S3 and Route 53 are global and are queried
-once per account. `--tags` adds two calls per bucket.
+Fan-out cost is roughly accounts × regions × 1–6 read-only calls. As a worked
+example, 10 accounts and 2 regions is at most 120 calls, typically 10–20
+seconds with 8 workers, and scales linearly from there. S3 and Route 53 are
+global and are queried once per account. `--tags` adds two calls per bucket.
 
 ## Security notes
 
