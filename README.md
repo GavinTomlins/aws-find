@@ -58,6 +58,34 @@ aws-find host app.example.com --role ReadOnlyAccess --debug
                             open console │ print URL │ export creds │ ssm start-session (ec2)
 ```
 
+### Parallel workers
+
+1. **Job list.** After listing accounts the main process loops over them once,
+   sequentially: it asks Identity Center which permission sets you hold, picks
+   one (see `--role`), and mints short-lived credentials with
+   `sso get-role-credentials`. Credentials go to one file per account in a
+   private temp directory, and one job line per account×region goes to a jobs
+   file. 12 accounts × 2 regions = 24 jobs.
+2. **Fan-out.** The jobs file is streamed to `xargs -0 -P N -n1`. `-P N`
+   (default 8, `--parallel`) is the number of jobs running at once; as one
+   finishes the next starts, so all slots stay busy. Lines are NUL-delimited
+   so account names with spaces survive.
+3. **Each worker** is a small `bash -c` wrapper that reads its account and
+   region, loads that account's credentials into the standard `AWS_*`
+   variables, prints the progress line, and re-executes `aws-find` with the
+   hidden `__scan` argument. That branch runs the scan function for the kind
+   with `AWS_DEFAULT_REGION` set. Workers are separate processes, so one
+   account's credentials never leak into another's calls. They run with
+   `set +e`, so a failing account cannot end the scan.
+4. **Collect.** Workers write JSON rows to stdout, which xargs appends to a
+   single results file. Each worker's stderr goes to its own log; after the
+   scan those logs become the per-account warning lines. Global services
+   (S3, Route 53) are queried only by the worker whose region is first in the
+   list.
+
+If you see `RequestLimitExceeded` or `Throttling` in the warnings, lower
+`--parallel`. Read-only calls usually tolerate 16 or more.
+
 All calls are `Describe`/`List`. The minimum permission set is `ReadOnlyAccess`
 (or `ViewOnlyAccess` plus `sso:ListAccounts`, `sso:ListAccountRoles`,
 `sso:GetRoleCredentials`). Accounts where the role cannot make a call are
@@ -153,6 +181,17 @@ detail, prefix list detail, Lambda function page.
 Fan-out is 12 accounts × 2 regions × 1–6 read-only calls, so under ~150 calls
 and 10–25 seconds with 8 workers. S3 and Route 53 are global and are only
 queried once per account.
+
+## Tests
+
+```bash
+tests/run
+```
+
+Runs `aws-find` offline against `tests/fake-aws`, a stand-in for the AWS CLI
+with canned answers, in a throwaway `HOME` with a fake SSO token, stubbed
+`dig` and a picker that cancels. No AWS access is needed. Add a case to
+`tests/run` and, if it needs new data, a branch to `tests/fake-aws`.
 
 ## Extending it
 
