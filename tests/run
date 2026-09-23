@@ -76,7 +76,7 @@ check "show-commands: grouped across accounts"    "ran in 2 account(s), region(s
 check "show-commands: explained"                  "# all security groups in the region" sg website --show-commands
 check "show-commands: pasteable quoting"          "--query 'SecurityGroups[]" sg website --show-commands
 check "show-commands: works with roles"           "# permission sets you hold" roles --show-commands
-check "version flag"                                "aws-find 0.3.0" --version
+check "version flag"                                "aws-find 0.4.0" --version
 check "bad kind refused"                            "unknown kind" bogus x
 FAKE_DENY_EC2=1 check "denied account is reported with its role" "(as AWSPowerUserAccess) ap-southeast-2: An error occurred (UnauthorizedOperation)" host app.example.com
 FAKE_DENY_EC2=1 check "denied scan still finishes"  "scan(s) reported errors" sg website

@@ -60,7 +60,7 @@
 #              use; optional when the file has exactly one), AWS_FIND_ROLE, AWS_FIND_REGIONS,
 #              AWS_FIND_PARALLEL, AWS_FIND_AGG_PROFILE, AWS_FIND_AGG_NAME
 
-VERSION="0.3.0"
+VERSION="0.4.0"
 
 set -euo pipefail
 # shellcheck disable=SC2154
