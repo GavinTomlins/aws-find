@@ -81,7 +81,7 @@ aws-find sg '*'                                  # every security group in the o
 aws-find pl office                               # prefix lists named *office*
 aws-find lambda 'billing-*' --accounts pick      # fzf-select which accounts to scan
 aws-find lambda thumbnail --json | jq .          # machine-readable, no picker
-aws-find sg payroll --show-commands              # learn the CLI: every aws command used, grouped and explained
+aws-find sg website --show-commands              # learn the CLI: every aws command used, grouped and explained
 aws-find roles                                   # which role will be used where?
 ```
 

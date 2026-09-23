@@ -25,7 +25,7 @@
 #   aws-find pl office                                         # prefix lists named *office*
 #   aws-find lambda 'billing-*' --accounts pick                # fzf-select which accounts to scan
 #   aws-find lambda thumbnail --json | jq .                    # machine-readable, no picker
-#   aws-find sg payroll --show-commands                        # print every aws command used, grouped
+#   aws-find sg website --show-commands                        # print every aws command used, grouped
 #                                                              #   and explained, to learn the CLI
 #   aws-find host app.example.com --role ReadOnlyAccess --debug
 #   aws-find roles                                             # which role will be used where?
