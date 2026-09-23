@@ -16,9 +16,8 @@ name and it tells you where that thing lives.
 ## Prerequisites
 
 - **[AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)**
-  configured for IAM Identity Center (an `[sso-session NAME]` block in
-  `~/.aws/config`). Create one with `aws configure sso-session` if you have
-  none.
+  and access to an AWS Organization through IAM Identity Center. See
+  *Configuring Identity Center access* below for the one config block needed.
 - **[jq](https://jqlang.github.io/jq/)** for JSON handling.
 - **[fzf](https://github.com/junegunn/fzf)** *(optional)* — enables the
   interactive picker. Without it the first hit is selected automatically.
@@ -55,8 +54,46 @@ Optionally symlink it onto your `PATH`:
 ln -s "$PWD/aws-find" /usr/local/bin/aws-find
 ```
 
-If `~/.aws/config` holds several `sso-session` blocks, tell aws-find which one
-to use from your shell profile (`~/.zshrc` / `~/.bashrc`):
+### Configuring Identity Center access
+
+aws-find reaches your accounts through an IAM Identity Center *session*, an
+`[sso-session NAME]` block in `~/.aws/config`. It holds two facts: your
+organization's **access portal URL**, which is the address you sign in at
+(shown on the Identity Center dashboard, and in the sign-in emails, as
+`https://<something>.awsapps.com/start`), and the **region** Identity Center
+is deployed in. Create the block once with:
+
+```sh
+aws configure sso-session
+```
+
+or write it yourself:
+
+```ini
+[sso-session my-org]
+sso_start_url = https://d-0123456789.awsapps.com/start
+sso_region = ap-southeast-2
+sso_registration_scopes = sso:account:access
+```
+
+No per-account profiles are needed: aws-find lists the accounts you can reach
+and mints its own short-lived credentials for each one. Sign in once:
+
+```sh
+aws sso login --sso-session my-org
+```
+
+The browser sign-in leaves a token in `~/.aws/sso/cache/`, which aws-find
+reuses until it expires (typically 8–12 hours) and then re-runs the login for
+you. Confirm everything is wired up with:
+
+```sh
+aws-find roles
+```
+
+which lists every account visible to you and the permission set that will be
+used in each. If `~/.aws/config` holds several `sso-session` blocks, tell
+aws-find which one to use from your shell profile (`~/.zshrc` / `~/.bashrc`):
 
 ```sh
 export AWS_FIND_SSO_SESSION=my-org
