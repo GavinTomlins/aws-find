@@ -37,12 +37,22 @@ check "sg: matched by description"                  "sg payroll-web" sg 'payroll
 check "sg: bare * lists everything (default group)" "default" sg '*'
 check "pl: match by name"                           "pl office-ips in account Shared Services" pl office
 check "lambda: anchored glob"                       "lambda billing-thumbnailer" lambda 'billing-*'
+jsonout=$(HOME=$H TMPDIR=$H PATH="$H/bin:$PATH" AWS_FIND_REGIONS="ap-southeast-2" AWS_FIND_PARALLEL=4 timeout 60 "$root/aws-find" sg payroll --json --show-commands </dev/null 2>/dev/null)
+if jq -e . >/dev/null 2>&1 <<<"$jsonout"; then pass=$((pass+1)); echo "  ok   show-commands: --json stdout stays pure JSON"; else fail=$((fail+1)); echo "  FAIL show-commands: --json stdout polluted"; sed 's/^/       | /' <<<"$jsonout"; fi
 check "json: rows on stdout"                        '"kind":"lambda"' lambda billing --json
 check "roles: most capable role chosen"             "AWSPowerUserAccess" roles
 check "roles: chosen role is marked"                "(will be used)" roles
+check "show-commands: report printed"            "Commands used" sg payroll --show-commands
+check "show-commands: SSO token redacted"         "--access-token <redacted>" sg payroll --show-commands
+check "show-commands: grouped across accounts"    "ran in 2 account(s), region(s): ap-southeast-2 us-east-1" sg payroll --show-commands
+check "show-commands: explained"                  "# all security groups in the region" sg payroll --show-commands
+check "show-commands: pasteable quoting"          "--query 'SecurityGroups[]" sg payroll --show-commands
+check "show-commands: works with roles"           "# permission sets you hold" roles --show-commands
 check "version flag"                                "aws-find 0.1.0" --version
 check "bad kind refused"                            "unknown kind" bogus x
 FAKE_DENY_EC2=1 check "denied account is reported with its role" "(as AWSPowerUserAccess) ap-southeast-2: An error occurred (UnauthorizedOperation)" host app.example.com
 FAKE_DENY_EC2=1 check "denied scan still finishes"  "scan(s) reported errors" sg payroll
 
+out=$(run sg payroll --show-commands --json)
+if grep -q -- '--access-token tok' <<<"$out"; then fail=$((fail+1)); echo "  FAIL show-commands: raw SSO token leaked"; else pass=$((pass+1)); echo "  ok   show-commands: raw SSO token never printed"; fi
 printf '\n%d passed, %d failed\n' "$pass" "$fail"; [[ $fail -eq 0 ]]

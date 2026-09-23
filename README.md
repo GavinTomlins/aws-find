@@ -81,6 +81,7 @@ aws-find sg '*'                                  # every security group in the o
 aws-find pl office                               # prefix lists named *office*
 aws-find lambda 'billing-*' --accounts pick      # fzf-select which accounts to scan
 aws-find lambda thumbnail --json | jq .          # machine-readable, no picker
+aws-find sg payroll --show-commands              # learn the CLI: every aws command used, grouped and explained
 aws-find roles                                   # which role will be used where?
 ```
 
@@ -97,6 +98,7 @@ continues once the browser sign-in completes.
 | `--role NAME` | Permission set to assume in every account. Warns per account when you do not hold it. |
 | `--parallel N` | Concurrent account×region workers. Default 8. |
 | `--json` | Print result rows as JSON lines to stdout and skip the picker. |
+| `--show-commands` | After the scan, print every `aws` CLI command that ran, with the SSO token redacted, identical commands across accounts grouped with a count and region list, and a one-line explanation of what each one is for. Goes to stderr, so it combines with `--json`. See *Learning the CLI*. |
 | `--debug` | Print every captured AWS error in full and write an xtrace file (path shown at start). |
 | `--tags` | `s3` only: also match bucket tag values and show the CloudFormation stack name as the label. One extra call per bucket. |
 | `--name PAT`, `--no-name` | `host` only: tag/name pattern to search alongside the IP (default: first DNS label), or disable it. |
@@ -131,6 +133,28 @@ one opens an action menu:
   shell using those credentials.
 
 Escape in either menu quits cleanly.
+
+### Learning the CLI
+
+`--show-commands` turns a search into a worked example. After the scan it
+prints each `aws` command exactly as it ran, shell-quoted so it can be pasted,
+with the SSO token replaced by `<redacted>`. Commands that ran in several
+accounts or regions are shown once with how many and where, and each carries a
+one-line note on what it is for and why aws-find uses it:
+
+```
+» Commands used (identical commands across accounts shown once; SSO token redacted)
+
+  # accounts you can reach through IAM Identity Center
+  aws sso list-accounts --region ap-southeast-2 --access-token <redacted> --output json
+
+  # the network interface that owns the IP, whatever it is attached to (EC2, ELB node, NAT, RDS, Lambda)
+  # ran in 12 account(s), region(s): ap-southeast-2 us-east-1
+  aws ec2 describe-network-interfaces --filters Name=association.public-ip,Values=203.0.113.10 --query 'NetworkInterfaces[].{...}' --output json
+```
+
+To reproduce one by hand, sign in and run it with a profile for that account,
+for example `aws --profile web-prod ec2 describe-network-interfaces ...`.
 
 ## How it works
 

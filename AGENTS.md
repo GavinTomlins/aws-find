@@ -47,6 +47,12 @@ the architecture you must preserve.
   real account IDs, portal URLs, hostnames, instance IDs, IPs or credentials.
   Credentials only ever live in the per-run temp directory that is deleted on
   exit.
+- **Every AWS call goes through the `aws()` wrapper function** so that
+  `--show-commands` can log it. Never call `command aws` directly from a scan
+  function, and when adding a new call add a matching line to
+  `explain_cmd` so the report can describe it. Anything secret must travel in
+  the environment, not in arguments; the only argument-borne secret is
+  `--access-token`, which the wrapper redacts.
 - **Environment variables** are prefixed `AWS_FIND_`.
 - **Help text is the spec.** The header comment of `aws-find` is what
   `--help` prints (lines 2–45). Keep the examples there and in the README in

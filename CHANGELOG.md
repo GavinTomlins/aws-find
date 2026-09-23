@@ -6,6 +6,13 @@ All notable changes to aws-find are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `--show-commands`: after a search, prints every `aws` CLI command that ran,
+  shell-quoted and with the SSO token redacted, grouped across accounts and
+  regions with a count, and a one-line explanation of each. Works with
+  `--json` and `roles`.
+
 ## [0.1.0] - 2026-09-24
 
 ### Added
