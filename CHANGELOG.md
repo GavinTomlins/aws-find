@@ -6,6 +6,8 @@ All notable changes to aws-find are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-24
+
 ### Added
 
 - `aws-find dns <dns-name>`: finds every hosted zone across the organization
@@ -47,6 +49,7 @@ All notable changes to aws-find are recorded here. The format follows
 - `--json` output, `--debug` tracing, `--version`.
 - Offline test suite (`tests/run`) against a fake AWS CLI.
 
-[Unreleased]: https://github.com/GavinTomlins/aws-find/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/GavinTomlins/aws-find/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/GavinTomlins/aws-find/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/GavinTomlins/aws-find/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/GavinTomlins/aws-find/releases/tag/v0.1.0

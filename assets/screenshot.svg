@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1740" height="455" font-family="SFMono-Regular,Menlo,Consolas,monospace" font-size="13">
+<svg xmlns="http://www.w3.org/2000/svg" width="1740" height="493" font-family="SFMono-Regular,Menlo,Consolas,monospace" font-size="13">
 <rect width="100%" height="100%" rx="8" fill="#282c34"/>
 <circle cx="20" cy="18" r="6" fill="#ff5f56"/><circle cx="40" cy="18" r="6" fill="#ffbd2e"/><circle cx="60" cy="18" r="6" fill="#27c93f"/>
 <text y="53" xml:space="preserve">
@@ -30,43 +30,51 @@
 <tspan x="23.8" fill="#abb2bf"> Scanning 2 account(s) x regions [ap-southeast-2 us-east-1] with 4 workers</tspan>
 </text>
 <text y="186" xml:space="preserve">
+<tspan x="16" fill="#e5c07b" font-weight="bold">!</tspan>
+<tspan x="23.8" fill="#abb2bf"> Web Production (as AWSPowerUserAccess) ap-southeast-2: jq: error (at &lt;unknown&gt;): Cannot iterate over null (null)</tspan>
 </text>
 <text y="205" xml:space="preserve">
-<tspan x="16" fill="#98c379" font-weight="bold">✔ app-web-01 (i-0123456789abcdef0) is in account Web Production [123456789012] region ap-southeast-2  (IP match)</tspan>
+<tspan x="16" fill="#e5c07b" font-weight="bold">!</tspan>
+<tspan x="23.8" fill="#abb2bf"> 1 account/region scan(s) reported errors; hits in those may be missing. Run &#x27;aws-find roles&#x27; to see which permission sets you hold, then retry with --role NAME (or --debug for full output).</tspan>
 </text>
 <text y="224" xml:space="preserve">
-<tspan x="16" fill="#56b6c2" font-weight="bold">~ App-staging (i-0fedcba987654321f) in account Shared Services [210987654321] region ap-southeast-2  (name/tag match only: tag:*app* [Name=App-staging])</tspan>
 </text>
 <text y="243" xml:space="preserve">
+<tspan x="16" fill="#98c379" font-weight="bold">✔ app-web-01 (i-0123456789abcdef0) is in account Web Production [123456789012] region ap-southeast-2  (IP match)</tspan>
 </text>
 <text y="262" xml:space="preserve">
-<tspan x="16" fill="#abb2bf" font-weight="bold">ec2  Web Production   123456789012  ap-southeast-2  i-0123456789abcdef0  app-web-01   running t3.large 203.0.113.10  eni:association.public-ip</tspan>
+<tspan x="16" fill="#56b6c2" font-weight="bold">~ App-staging (i-0fedcba987654321f) in account Shared Services [210987654321] region ap-southeast-2  (name/tag match only: tag:*app* [Name=App-staging])</tspan>
 </text>
 <text y="281" xml:space="preserve">
-<tspan x="16" fill="#abb2bf">ec2  Shared Services  210987654321  ap-southeast-2  i-0fedcba987654321f  App-staging  stopped t3.small -             tag:*app* [Name=App-staging]</tspan>
 </text>
 <text y="300" xml:space="preserve">
+<tspan x="16" fill="#abb2bf" font-weight="bold">ec2  Web Production   123456789012  ap-southeast-2  i-0123456789abcdef0  app-web-01   running t3.large 203.0.113.10  eni:association.public-ip</tspan>
 </text>
 <text y="319" xml:space="preserve">
+<tspan x="16" fill="#abb2bf">ec2  Shared Services  210987654321  ap-southeast-2  i-0fedcba987654321f  App-staging  stopped t3.small -             tag:*app* [Name=App-staging]</tspan>
+</text>
+<text y="338" xml:space="preserve">
+</text>
+<text y="357" xml:space="preserve">
 <tspan x="16" fill="#98c379" font-weight="bold">$</tspan>
 <tspan x="23.8" fill="#abb2bf"> aws-find s3 digital-asset --tags</tspan>
 </text>
-<text y="338" xml:space="preserve">
+<text y="376" xml:space="preserve">
 <tspan x="16" fill="#61afef" font-weight="bold">»</tspan>
 <tspan x="23.8" fill="#abb2bf"> Searching s3 matching digital-asset  (regex ^.*digital[-_ ]?asset.*$, case-insensitive)</tspan>
 </text>
-<text y="357" xml:space="preserve">
+<text y="395" xml:space="preserve">
 <tspan x="16" fill="#61afef" font-weight="bold">»</tspan>
 <tspan x="23.8" fill="#abb2bf">   also matching bucket tags (stack name, logical id, custom tags); slower</tspan>
-</text>
-<text y="376" xml:space="preserve">
-</text>
-<text y="395" xml:space="preserve">
-<tspan x="16" fill="#98c379" font-weight="bold">✔ s3 DigitalAssetStack in account Web Production [123456789012] region us-east-1</tspan>
 </text>
 <text y="414" xml:space="preserve">
 </text>
 <text y="433" xml:space="preserve">
+<tspan x="16" fill="#98c379" font-weight="bold">✔ s3 DigitalAssetStack in account Web Production [123456789012] region us-east-1</tspan>
+</text>
+<text y="452" xml:space="preserve">
+</text>
+<text y="471" xml:space="preserve">
 <tspan x="16" fill="#abb2bf" font-weight="bold">s3  Web Production  123456789012  us-east-1  assets-acme-cloud-fc9eebc9  DigitalAssetStack  created 2026-05-22  tag [aws:cloudformation:stack-name=DigitalAssetStack, aws:cloudformation:logical-id=DigitalAssetBucketA1B2]</tspan>
 </text>
 </svg>
