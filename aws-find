@@ -3,6 +3,7 @@
 # Center) for a resource, then jump to it in the console.
 #
 #   aws-find host   <dns-name>      which account/region hosts this hostname?
+#   aws-find ec2    <glob>          EC2 instances by Name tag, instance id, IP or any tag value
 #   aws-find s3     <glob>          S3 buckets whose name matches
 #   aws-find sg     <glob>          security groups by id, name, description or tag
 #   aws-find pl     <glob>          managed prefix lists by id, name or tag
@@ -19,6 +20,8 @@
 #   aws-find host --name website app.example.com               # also match tag values *website*
 #   aws-find dns app.example.com                               # zone, record, and whether Route 53 is authoritative
 #   aws-find dns https://portal.cus-1.example.app/login        # scheme and path are stripped; finds delegated child zones
+#   aws-find ec2 'web-*'                                       # instances by Name tag across the org
+#   aws-find ec2 '*' --json | tv                               # browse every instance in television
 #   aws-find s3 backup                                         # any bucket containing "backup"
 #   aws-find s3 'acme-*-logs'                                  # anchored glob
 #   aws-find s3 digital-asset --tags                           # also match bucket tags, e.g. the CDK/CFN
@@ -92,6 +95,30 @@ aws() {
   command aws "$@"
 }
 
+# Console destination for a result row, and the Identity Center deep link
+# that lands on it in the right account and role.
+console_dest() {   # kind region id
+  local k="$1" r="$2" id="$3"
+  case "$k" in
+    ec2)       echo "https://${r}.console.aws.amazon.com/ec2/home?region=${r}#InstanceDetails:instanceId=${id}" ;;
+    eni)       echo "https://${r}.console.aws.amazon.com/ec2/home?region=${r}#NetworkInterface:networkInterfaceId=${id}" ;;
+    eip)       echo "https://${r}.console.aws.amazon.com/ec2/home?region=${r}#Addresses:" ;;
+    elb)       echo "https://${r}.console.aws.amazon.com/ec2/home?region=${r}#LoadBalancers:" ;;
+    lightsail) echo "https://lightsail.aws.amazon.com/ls/webapp/${r}/instances/${id}/connect" ;;
+    dns|route53) echo "https://us-east-1.console.aws.amazon.com/route53/v2/hostedzones#ListRecordSets/${id##*/}" ;;
+    s3)        echo "https://s3.console.aws.amazon.com/s3/buckets/${id}?region=${r}&tab=objects" ;;
+    sg)        echo "https://${r}.console.aws.amazon.com/ec2/home?region=${r}#SecurityGroup:groupId=${id}" ;;
+    pl)        echo "https://${r}.console.aws.amazon.com/vpcconsole/home?region=${r}#PrefixListDetails:PrefixListId=${id}" ;;
+    lambda)    echo "https://${r}.console.aws.amazon.com/lambda/home?region=${r}#/functions/${id}" ;;
+    *)         echo "https://console.aws.amazon.com/" ;;
+  esac
+}
+console_url() {   # account role dest
+  [[ -n "${START_URL:-}" ]] || START_URL=$(awk -v s="[sso-session ${SSO_SESSION}]" '$0==s{f=1;next} /^\[/{f=0} f&&/sso_start_url/{print $3}' ~/.aws/config)
+  [[ -n "$START_URL" ]] || die "cannot build a console link: sso_start_url not found for sso-session '${SSO_SESSION}'"
+  echo "${START_URL}/#/console?account_id=${1}&role_name=${2}&destination=$(urlencode "$3")"
+}
+
 # One line of plain English per command, for the --show-commands report.
 explain_cmd() {
   case "$1" in
@@ -101,6 +128,7 @@ explain_cmd() {
     *"describe-network-interfaces"*)           echo "the network interface that owns the IP, whatever it is attached to (EC2, ELB node, NAT, RDS, Lambda)" ;;
     *"describe-instances --instance-ids"*)     echo "details of the instance attached to a matched interface or load balancer target" ;;
     *"describe-instances --filters"*)          echo "instances where any tag value matches the pattern" ;;
+    *"ec2 describe-instances --query"*)        echo "all instances in the region; matched client-side on Name tag, id, IPs and tags" ;;
     *"describe-addresses"*)                    echo "Elastic IPs matching the address (an unattached one still shows up here)" ;;
     *"lightsail get-instances"*)               echo "Lightsail instances, which never appear as EC2 network interfaces" ;;
     *"elbv2 describe-load-balancers"*)         echo "the application/network load balancer whose DNS name the CNAME points at" ;;
@@ -375,6 +403,16 @@ scan_pl() {
     done
 }
 
+scan_ec2() {
+  aws ec2 describe-instances \
+    --query 'Reservations[].Instances[].{id:InstanceId,state:State.Name,itype:InstanceType,label:(Tags[?Key==`Name`].Value|[0]),pub:PublicIpAddress,priv:PrivateIpAddress,az:Placement.AvailabilityZone,tags:Tags}' --output json \
+  | jq -c --arg re "$AWS_FIND_RE" '.[] | select((.id|test($re;"i")) or ((.label//"")|test($re;"i")) or ((.pub//"")|test($re;"i")) or ((.priv//"")|test($re;"i")) or ((.tags//[])|any(.Value|test($re;"i"))))
+        | .detail = (.state + " " + .itype + " " + (.pub // "-") + " " + (.priv // "-")) | del(.tags)' \
+  | while read -r i; do
+      emit --argjson i "$i" '{kind:"ec2",acct:$acct,name:$name,region:$region,via:"ec2:describe-instances"} + $i'
+    done
+}
+
 scan_lambda() {
   aws lambda list-functions \
     --query 'Functions[].{id:FunctionName,label:FunctionName,runtime:Runtime,mem:MemorySize,mod:LastModified,arn:FunctionArn}' --output json \
@@ -390,7 +428,7 @@ if [[ "${1:-}" == "__scan" ]]; then
   W_ACCT="$2"; W_NAME="$3"; W_REGION="$4"
   export AWS_DEFAULT_REGION="$W_REGION" AWS_PAGER=""
   case "$AWS_FIND_KIND" in
-    host) scan_host ;; dns) scan_dns ;; s3) scan_s3 ;; sg) scan_sg ;; pl) scan_pl ;; lambda) scan_lambda ;;
+    host) scan_host ;; dns) scan_dns ;; ec2) scan_ec2 ;; s3) scan_s3 ;; sg) scan_sg ;; pl) scan_pl ;; lambda) scan_lambda ;;
   esac
   exit 0
 fi
@@ -417,7 +455,7 @@ while [[ $# -gt 0 ]]; do
     *) if [[ -z "$KIND" ]]; then KIND="$1"; elif [[ -z "$PATTERN" ]]; then PATTERN="$1"; else die "unexpected argument $1"; fi; shift ;;
   esac
 done
-case "$KIND" in host|dns|s3|sg|pl|lambda|roles) ;; "") usage 1 ;; *) die "unknown kind '$KIND' (host|dns|s3|sg|pl|lambda|roles)" ;; esac
+case "$KIND" in host|dns|ec2|s3|sg|pl|lambda|roles) ;; "") usage 1 ;; *) die "unknown kind '$KIND' (host|dns|ec2|s3|sg|pl|lambda|roles)" ;; esac
 [[ -n "$PATTERN" || "$KIND" == "roles" ]] || die "aws-find ${KIND} needs a $([[ $KIND == host || $KIND == dns ]] && echo dns-name || echo pattern) (try --help)"
 
 need aws; need jq
@@ -628,10 +666,21 @@ if [[ -f "$TMP/accounts.tsv" ]]; then
 fi
 jq -s 'unique_by(.kind,.acct,.region,(.id // .via))[]' -c "$RESULTS" >"$TMP/r2"; mv "$TMP/r2" "$RESULTS"
 
-if [[ $JSON -eq 1 ]]; then cat "$RESULTS"; exit 0; fi
+if [[ $JSON -eq 1 ]]; then
+  # add the console deep link and the role it uses, so other tools (television,
+  # scripts) can act on a row without re-deriving anything
+  while read -r row; do
+    acct=$(jq -r .acct <<<"$row"); region=$(jq -r .region <<<"$row"); id=$(jq -r '.id // empty' <<<"$row"); rk=$(jq -r .kind <<<"$row")
+    role=$(awk -F'\t' -v a="$acct" '$1==a{print $2}' "$TMP/roles.tsv" 2>/dev/null || true); role="${role:-${ROLE_PREF:-AdministratorAccess}}"
+    [[ "$region" == "global" ]] && creg="${REGIONS%% *}" || creg="$region"
+    jq -c --arg role "$role" --arg url "$(console_url "$acct" "$role" "$(console_dest "$rk" "$creg" "$id")")" '. + {role:$role, url:$url}' <<<"$row"
+  done <"$RESULTS"
+  exit 0
+fi
 
 echo >&2
-jq -r 'select(.kind=="ec2" and (.via|startswith("tag:")|not)) | "\u001b[1;32m✔ \(.label // .id) (\(.id)) is in account \(.name) [\(.acct)] region \(.region)  (IP match)\u001b[0m"' "$RESULTS" | sort -u >&2
+jq -r 'select(.kind=="ec2" and .via=="ec2:describe-instances") | "\u001b[1;32m✔ \(.label // .id) (\(.id)) in account \(.name) [\(.acct)] region \(.region)  \(.detail)\u001b[0m"' "$RESULTS" | sort -u >&2
+jq -r 'select(.kind=="ec2" and .via!="ec2:describe-instances" and (.via|startswith("tag:")|not)) | "\u001b[1;32m✔ \(.label // .id) (\(.id)) is in account \(.name) [\(.acct)] region \(.region)  (IP match)\u001b[0m"' "$RESULTS" | sort -u >&2
 jq -r 'select(.kind=="ec2" and (.via|startswith("tag:"))) | "\u001b[1;36m~ \(.label // .id) (\(.id)) in account \(.name) [\(.acct)] region \(.region)  (name/tag match only: \(.via))\u001b[0m"' "$RESULTS" | sort -u >&2
 jq -r 'select(.kind=="lightsail") | "\u001b[1;32m✔ Lightsail \(.label) is in account \(.name) [\(.acct)] region \(.region)\u001b[0m"' "$RESULTS" | sort -u >&2
 jq -r 'select(.kind=="eip") | "\u001b[1;33m! \(.pub) is an unattached Elastic IP in account \(.name) [\(.acct)] region \(.region)\u001b[0m"' "$RESULTS" | sort -u >&2
@@ -653,23 +702,8 @@ ACCT=$(jq -r .acct <<<"$ROW"); REGION=$(jq -r .region <<<"$ROW"); ID=$(jq -r '.i
 ROLE=$(awk -F'\t' -v a="$ACCT" '$1==a{print $2}' "$TMP/roles.tsv" 2>/dev/null || true); ROLE="${ROLE:-${ROLE_PREF:-AdministratorAccess}}"
 [[ "$REGION" == "global" ]] && CREG="${REGIONS%% *}" || CREG="$REGION"
 
-case "$RKIND" in
-  ec2)       DEST="https://${CREG}.console.aws.amazon.com/ec2/home?region=${CREG}#InstanceDetails:instanceId=${ID}" ;;
-  eni)       DEST="https://${CREG}.console.aws.amazon.com/ec2/home?region=${CREG}#NetworkInterface:networkInterfaceId=${ID}" ;;
-  eip)       DEST="https://${CREG}.console.aws.amazon.com/ec2/home?region=${CREG}#Addresses:" ;;
-  elb)       DEST="https://${CREG}.console.aws.amazon.com/ec2/home?region=${CREG}#LoadBalancers:" ;;
-  lightsail) DEST="https://lightsail.aws.amazon.com/ls/webapp/${CREG}/instances/${ID}/connect" ;;
-  dns)       DEST="https://us-east-1.console.aws.amazon.com/route53/v2/hostedzones#ListRecordSets/${ID##*/}" ;;
-  route53)   DEST="https://us-east-1.console.aws.amazon.com/route53/v2/hostedzones#ListRecordSets/${ID##*/}" ;;
-  s3)        DEST="https://s3.console.aws.amazon.com/s3/buckets/${ID}?region=${CREG}&tab=objects" ;;
-  sg)        DEST="https://${CREG}.console.aws.amazon.com/ec2/home?region=${CREG}#SecurityGroup:groupId=${ID}" ;;
-  pl)        DEST="https://${CREG}.console.aws.amazon.com/vpcconsole/home?region=${CREG}#PrefixListDetails:PrefixListId=${ID}" ;;
-  lambda)    DEST="https://${CREG}.console.aws.amazon.com/lambda/home?region=${CREG}#/functions/${ID}" ;;
-  *)         DEST="https://console.aws.amazon.com/" ;;
-esac
-[[ -n "${START_URL:-}" ]] || START_URL=$(awk -v s="[sso-session ${SSO_SESSION}]" '$0==s{f=1;next} /^\[/{f=0} f&&/sso_start_url/{print $3}' ~/.aws/config)
-[[ -n "$START_URL" ]] || die "cannot build a console link: sso_start_url not found for sso-session '${SSO_SESSION}'"
-CONSOLE_URL="${START_URL}/#/console?account_id=${ACCT}&role_name=${ROLE}&destination=$(urlencode "$DEST")"
+DEST=$(console_dest "$RKIND" "$CREG" "$ID")
+CONSOLE_URL=$(console_url "$ACCT" "$ROLE" "$DEST")
 
 [[ $DEBUG -eq 1 ]] && { set +x; log "Debug trace stopped before the action step so credentials never reach ${TRACE}"; }
 ACTIONS=$'open console in browser\nprint console URL\nprint export lines for this account/role'

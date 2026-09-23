@@ -1,0 +1,34 @@
+# television channel: all security groups across the AWS Organization, via aws-find.
+# Install: cp television/aws-find-sg.toml ~/.config/television/cable/   then: tv aws-find-sg
+# The org-wide scan runs once when the channel opens (10-25 s), then you fuzzy-search the
+# result. Rows are cached in $TMPDIR/aws-find-sg.jsonl for the preview and actions.
+# Needs a valid Identity Center token: run 'aws-find roles' first if in doubt.
+
+[metadata]
+name = "aws-find-sg"
+description = "All security groups in the AWS Organization, searchable by group id, name, description or tag"
+requirements = ["aws-find", "jq"]
+
+[source]
+command = "aws-find sg '*' --json 2>/dev/null | tee \"${TMPDIR:-/tmp}/aws-find-sg.jsonl\" | jq -r '[.name, .region, .id, (.label // \"-\"), (.detail // \"-\")] | @tsv'"
+output = "{split:\t:2}"
+
+[preview]
+command = "jq -C --arg id '{split:\t:2}' --arg name '{split:\t:0}' 'select(.id == $id and .name == $name)' \"${TMPDIR:-/tmp}/aws-find-sg.jsonl\""
+
+[ui]
+layout = "portrait"
+preview_panel = { size = 55 }
+
+[keybindings]
+enter = "actions:open"
+
+[actions.open]
+description = "Open the selected security group in the AWS console (Identity Center deep link)"
+command = "jq -r --arg id '{split:\t:2}' --arg name '{split:\t:0}' 'select(.id == $id and .name == $name) | .url' \"${TMPDIR:-/tmp}/aws-find-sg.jsonl\" | head -1 | xargs open"
+mode = "fork"
+
+[actions.url]
+description = "Print the console deep link"
+command = "jq -r --arg id '{split:\t:2}' --arg name '{split:\t:0}' 'select(.id == $id and .name == $name) | .url' \"${TMPDIR:-/tmp}/aws-find-sg.jsonl\" | head -1"
+mode = "execute"

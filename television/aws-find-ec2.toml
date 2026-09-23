@@ -1,0 +1,34 @@
+# television channel: all EC2 instances across the AWS Organization, via aws-find.
+# Install: cp television/aws-find-ec2.toml ~/.config/television/cable/   then: tv aws-find-ec2
+# The org-wide scan runs once when the channel opens (10-25 s), then you fuzzy-search the
+# result. Rows are cached in $TMPDIR/aws-find-ec2.jsonl for the preview and actions.
+# Needs a valid Identity Center token: run 'aws-find roles' first if in doubt.
+
+[metadata]
+name = "aws-find-ec2"
+description = "All EC2 instances in the AWS Organization, searchable by Name tag, instance id, IP or any tag value"
+requirements = ["aws-find", "jq"]
+
+[source]
+command = "aws-find ec2 '*' --json 2>/dev/null | tee \"${TMPDIR:-/tmp}/aws-find-ec2.jsonl\" | jq -r '[.name, .region, .id, (.label // \"-\"), (.detail // \"-\")] | @tsv'"
+output = "{split:\t:2}"
+
+[preview]
+command = "jq -C --arg id '{split:\t:2}' --arg name '{split:\t:0}' 'select(.id == $id and .name == $name)' \"${TMPDIR:-/tmp}/aws-find-ec2.jsonl\""
+
+[ui]
+layout = "portrait"
+preview_panel = { size = 55 }
+
+[keybindings]
+enter = "actions:open"
+
+[actions.open]
+description = "Open the selected EC2 instance in the AWS console (Identity Center deep link)"
+command = "jq -r --arg id '{split:\t:2}' --arg name '{split:\t:0}' 'select(.id == $id and .name == $name) | .url' \"${TMPDIR:-/tmp}/aws-find-ec2.jsonl\" | head -1 | xargs open"
+mode = "fork"
+
+[actions.url]
+description = "Print the console deep link"
+command = "jq -r --arg id '{split:\t:2}' --arg name '{split:\t:0}' 'select(.id == $id and .name == $name) | .url' \"${TMPDIR:-/tmp}/aws-find-ec2.jsonl\" | head -1"
+mode = "execute"

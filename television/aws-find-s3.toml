@@ -1,0 +1,34 @@
+# television channel: all S3 buckets across the AWS Organization, via aws-find.
+# Install: cp television/aws-find-s3.toml ~/.config/television/cable/   then: tv aws-find-s3
+# The org-wide scan runs once when the channel opens (10-25 s), then you fuzzy-search the
+# result. Rows are cached in $TMPDIR/aws-find-s3.jsonl for the preview and actions.
+# Needs a valid Identity Center token: run 'aws-find roles' first if in doubt.
+
+[metadata]
+name = "aws-find-s3"
+description = "All S3 buckets in the AWS Organization, searchable by bucket name"
+requirements = ["aws-find", "jq"]
+
+[source]
+command = "aws-find s3 '*' --json 2>/dev/null | tee \"${TMPDIR:-/tmp}/aws-find-s3.jsonl\" | jq -r '[.name, .region, .id, (.label // \"-\"), (.detail // \"-\")] | @tsv'"
+output = "{split:\t:2}"
+
+[preview]
+command = "jq -C --arg id '{split:\t:2}' --arg name '{split:\t:0}' 'select(.id == $id and .name == $name)' \"${TMPDIR:-/tmp}/aws-find-s3.jsonl\""
+
+[ui]
+layout = "portrait"
+preview_panel = { size = 55 }
+
+[keybindings]
+enter = "actions:open"
+
+[actions.open]
+description = "Open the selected S3 bucket in the AWS console (Identity Center deep link)"
+command = "jq -r --arg id '{split:\t:2}' --arg name '{split:\t:0}' 'select(.id == $id and .name == $name) | .url' \"${TMPDIR:-/tmp}/aws-find-s3.jsonl\" | head -1 | xargs open"
+mode = "fork"
+
+[actions.url]
+description = "Print the console deep link"
+command = "jq -r --arg id '{split:\t:2}' --arg name '{split:\t:0}' 'select(.id == $id and .name == $name) | .url' \"${TMPDIR:-/tmp}/aws-find-s3.jsonl\" | head -1"
+mode = "execute"

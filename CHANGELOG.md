@@ -6,6 +6,15 @@ All notable changes to aws-find are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `aws-find ec2 <glob>`: instances across the organization by Name tag,
+  instance id, public or private IP, or any tag value.
+- `--json` rows now include `url` (the Identity Center console deep link) and
+  `role` (the permission set used), so other tools can act on a row directly.
+- `television/`: one channel per kind for the television fuzzy finder, giving
+  an org-wide browser with preview and open-in-console on Enter.
+
 ## [0.3.0] - 2026-09-24
 
 ### Added

@@ -58,6 +58,16 @@ the architecture you must preserve.
   `--help` prints (lines 2–45). Keep the examples there and in the README in
   sync.
 
+## Television channels
+
+`television/aws-find-<kind>.toml` are generated from one template (see the
+loop in git history for `television/`); keep them identical apart from the
+kind. They depend on `--json` rows carrying `url`, `name` and `id`, and on the
+tab-separated display `name, region, id, label, detail`. Validate with
+`python3 -c 'import tomllib,glob;[tomllib.load(open(f,"rb")) for f in glob.glob("television/*.toml")]'`
+and check that `tv list-channels` shows them after copying to
+`~/.config/television/cable/`.
+
 ## Releasing
 
 1. Bump `VERSION` at the top of `aws-find`.

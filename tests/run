@@ -51,6 +51,12 @@ check "dns: wildcard record found"                  "*.cus-1.example.app → CNA
 check "dns: parent shows delegation"                "parent zone: delegates cus-1.example.app to ns-10.awsdns-10.org ns-9.awsdns-09.net" dns portal.cus-1.example.app
 check "dns: non-Route53 provider warned"            "provider    : Cloudflare" dns x.elsewhere.example
 check "dns: host kind also strips scheme"           "Resolving app.example.com" host https://app.example.com/
+check "ec2: match by Name tag"                     "app-web-01 (i-0123456789abcdef0) in account Web Production" ec2 'app-web'
+check "ec2: match by private IP"                    "App-staging (i-0fedcba987654321f)" ec2 10.1.0.9
+check "ec2: match by other tag value"               "app-web-01" ec2 prod
+check "ec2: bare * lists all"                       "App-staging" ec2 '*'
+check "json: rows carry console url"                '"url":"https://acme.awsapps.com/start/#/console?account_id=123456789012&role_name=AWSPowerUserAccess&destination=' ec2 app-web --json
+check "json: rows carry role"                       '"role":"AWSReadOnlyAccess"' sg website --json
 check "s3: name glob"                               "s3 acme-prod-logs in account Web Production" s3 'acme-*'
 check "s3: region resolved per bucket"              "region ap-southeast-2" s3 acme-prod-logs
 check "s3: --tags finds CamelCase stack via separators" "DigitalAssetStack" s3 digital-asset --tags

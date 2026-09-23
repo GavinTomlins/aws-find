@@ -104,6 +104,7 @@ export AWS_FIND_SSO_SESSION=my-org
 ```sh
 aws-find host   <dns-name>      # which account/region hosts this hostname?
 aws-find dns    <dns-name>      # which account holds the Route 53 zone and record, and is it live?
+aws-find ec2    <glob>          # EC2 instances by Name tag, instance id, IP or any tag value
 aws-find s3     <glob>          # S3 buckets whose name matches
 aws-find sg     <glob>          # security groups by id, name, description or tag
 aws-find pl     <glob>          # managed prefix lists by id, name or tag
@@ -122,6 +123,8 @@ aws-find host app.example.com
 aws-find host --name website app.example.com     # also match tag values *website*
 aws-find dns app.example.com                     # zone, record, and whether Route 53 is authoritative
 aws-find dns https://portal.cus-1.example.app/   # scheme and path stripped; finds delegated child zones
+aws-find ec2 'web-*'                             # instances by Name tag across the org
+aws-find ec2 10.1.0.9                            # or by private/public IP, instance id, any tag value
 aws-find s3 backup                               # any bucket containing "backup"
 aws-find s3 'acme-*-logs'                        # anchored glob
 aws-find s3 digital-asset --tags                 # also match bucket tags (CDK/CFN stack name, logical id)
@@ -142,12 +145,12 @@ continues once the browser sign-in completes.
 
 | Option | Description |
 | ------ | ----------- |
-| `<kind> <pattern>` | Positional: one of `host`, `dns`, `s3`, `sg`, `pl`, `lambda`, then a DNS name (`host`, `dns`; a URL is accepted and reduced to its hostname) or a glob. `roles` takes no pattern. |
+| `<kind> <pattern>` | Positional: one of `host`, `dns`, `ec2`, `s3`, `sg`, `pl`, `lambda`, then a DNS name (`host`, `dns`; a URL is accepted and reduced to its hostname) or a glob. `roles` takes no pattern. |
 | `--regions "r1 r2"` | Regions scanned in every account. Default `ap-southeast-2 us-east-1`; `host` adds the region Amazon's IP ranges report for the address. |
 | `--accounts pick` | fzf multi-select which accounts to scan instead of all of them. |
 | `--role NAME` | Permission set to assume in every account. Warns per account when you do not hold it. |
 | `--parallel N` | Concurrent account×region workers. Default 8. |
-| `--json` | Print result rows as JSON lines to stdout and skip the picker. |
+| `--json` | Print result rows as JSON lines to stdout and skip the picker. Each row carries `url`, the Identity Center console deep link, and `role`, the permission set it uses. |
 | `--show-commands` | After the scan, print every `aws` CLI command that ran, with the SSO token redacted, identical commands across accounts grouped with a count and region list, and a one-line explanation of what each one is for. Goes to stderr, so it combines with `--json`. See *Learning the CLI*. |
 | `--debug` | Print every captured AWS error in full and write an xtrace file (path shown at start). |
 | `--tags` | `s3` only: also match bucket tag values and show the CloudFormation stack name as the label. One extra call per bucket. |
@@ -206,6 +209,34 @@ one-line note on what it is for and why aws-find uses it:
 To reproduce one by hand, sign in and run it with a profile for that account,
 for example `aws --profile web-prod ec2 describe-network-interfaces ...`.
 
+## Television integration
+
+[television](https://github.com/alexpasmantier/television) (`tv`) is a
+fuzzy finder with "channels": a source command, a preview and actions. The
+`television/` directory ships one channel per kind that turns aws-find into an
+org-wide browser: the scan runs once when the channel opens, then you
+fuzzy-search every instance, bucket, security group, prefix list or Lambda
+in the organization, see the full row in the preview, and press Enter to open
+it in the console.
+
+```sh
+cp television/aws-find-*.toml ~/.config/television/cable/
+tv aws-find-ec2        # also: aws-find-s3, aws-find-sg, aws-find-pl, aws-find-lambda
+```
+
+Each channel runs `aws-find <kind> '*' --json`, caches the rows in
+`$TMPDIR/aws-find-<kind>.jsonl`, and lists them as account, region, id, name,
+detail. The preview shows the row's JSON; **Enter** opens the console deep
+link, and the `url` action prints it. Regions and role follow the usual
+`AWS_FIND_*` variables. A valid Identity Center token is needed, so run
+`aws-find roles` first if in doubt.
+
+Any search also pipes into tv without a channel:
+
+```sh
+aws-find ec2 '*' --json | tv
+```
+
 ## How it works
 
 ```
@@ -216,6 +247,7 @@ for example `aws --profile web-prod ec2 describe-network-interfaces ...`.
                                 └▶ per region (parallel, xargs -P): one scan function per kind
                                      host    ENI by IP, EIP, Lightsail, ELB→targets, tag-value, Route 53
                                      dns     list-hosted-zones, get-hosted-zone (NS), record sets
+                                     ec2     describe-instances, matched client-side
                                      s3      list-buckets (+ get-bucket-location, get-bucket-tagging)
                                      sg      describe-security-groups, matched client-side
                                      pl      describe-managed-prefix-lists, matched client-side
