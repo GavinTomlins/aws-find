@@ -40,6 +40,7 @@ check "lambda: anchored glob"                       "lambda billing-thumbnailer"
 check "json: rows on stdout"                        '"kind":"lambda"' lambda billing --json
 check "roles: most capable role chosen"             "AWSPowerUserAccess" roles
 check "roles: chosen role is marked"                "(will be used)" roles
+check "version flag"                                "aws-find 0.1.0" --version
 check "bad kind refused"                            "unknown kind" bogus x
 FAKE_DENY_EC2=1 check "denied account is reported with its role" "(as AWSPowerUserAccess) ap-southeast-2: An error occurred (UnauthorizedOperation)" host app.example.com
 FAKE_DENY_EC2=1 check "denied scan still finishes"  "scan(s) reported errors" sg payroll

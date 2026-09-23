@@ -29,6 +29,7 @@
 #   aws-find roles                                             # which role will be used where?
 #
 # Common flags
+#   -v, --version       print the aws-find version and exit
 #   --regions "r1 r2"   regions to scan            (default: $AWS_FIND_REGIONS or ap-southeast-2 us-east-1)
 #   --accounts pick     fzf multi-select accounts  (default: all visible)
 #   --role NAME         permission set to assume   (default: $AWS_FIND_ROLE, else the first of
@@ -48,6 +49,8 @@
 # Environment: AWS_FIND_SSO_SESSION (the [sso-session NAME] block in ~/.aws/config to
 #              use; optional when the file has exactly one), AWS_FIND_ROLE, AWS_FIND_REGIONS,
 #              AWS_FIND_PARALLEL, AWS_FIND_AGG_PROFILE, AWS_FIND_AGG_NAME
+
+VERSION="0.1.0"
 
 set -euo pipefail
 # shellcheck disable=SC2154
@@ -278,6 +281,7 @@ while [[ $# -gt 0 ]]; do
     --tags) S3_TAGS=1; shift ;;
     --debug) DEBUG=1; TRACE="${TMPDIR:-/tmp}/aws-find.trace"; exec 9>"$TRACE"; BASH_XTRACEFD=9; set -x; shift ;;
     -h|--help) usage 0 ;;
+    -v|--version) echo "aws-find ${VERSION}"; exit 0 ;;
     -*) die "unknown flag $1 (try --help)" ;;
     *) if [[ -z "$KIND" ]]; then KIND="$1"; elif [[ -z "$PATTERN" ]]; then PATTERN="$1"; else die "unexpected argument $1"; fi; shift ;;
   esac
@@ -504,6 +508,7 @@ esac
 [[ -n "$START_URL" ]] || die "cannot build a console link: sso_start_url not found for sso-session '${SSO_SESSION}'"
 CONSOLE_URL="${START_URL}/#/console?account_id=${ACCT}&role_name=${ROLE}&destination=$(urlencode "$DEST")"
 
+[[ $DEBUG -eq 1 ]] && { set +x; log "Debug trace stopped before the action step so credentials never reach ${TRACE}"; }
 ACTIONS=$'open console in browser\nprint console URL\nprint export lines for this account/role'
 [[ "$RKIND" == "ec2" ]] && ACTIONS+=$'\nssm start-session to instance'
 ACTIONS+=$'\nquit'
